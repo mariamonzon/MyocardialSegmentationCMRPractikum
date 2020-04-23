@@ -5,6 +5,7 @@ from torch.autograd import Variable
 from math import log
 
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
+
 class CrossEntropy2d(nn.Module):
 
     def __init__(self, size_average=True, ignore_label=255):
@@ -110,3 +111,138 @@ class FocalLoss(nn.Module):
             weight=self.weight,
             reduction=self.reduction
         )
+
+
+
+
+
+class JensenShannonDiv(nn.Module):
+    """ Implementation of theJensenShannonDivergence for 2D images loss function from """
+
+    def __init__(self, reduction='mean'):
+        super().__init__()
+        self.reduction = reduction
+        from scipy.stats import entropy
+
+    def forward(self, outputs, targets):
+        output_pdf = Softmax_2D()(outputs)
+        target_pdf = Softmax_2D()(targets)
+        # normalize
+        # output_pdf /= output_pdf.sum()
+        # target_pdf /= target_pdf.sum()
+        m = (output_pdf + target_pdf) / 2
+        JSD = (self.entropy(output_pdf, m) + self.entropy(output_pdf, target_pdf)) / 2
+        if self.reduction is 'mean':
+            JSD = torch.mean(JSD)
+        elif self.reduction is 'sum':
+            JSD = torch.sum(JSD)
+        return JSD
+
+    @staticmethod
+    def entropy(p, dim=-1, keepdim=None):
+        # e = torch.distributions.Categorical(probs=p).entropy()
+        return -torch.where(p > 0, p * p.log(), p.new([0.0])).sum(dim=dim, keepdim=keepdim)
+
+class KL_Divergence2D(nn.Module):
+
+    def __init__(self, reduction='mean'):
+        super().__init__()
+        self.reduction = reduction
+
+    def forward(self, outputs, targets):
+        p = Softmax_2D()(outputs)
+        q = Softmax_2D()(targets)
+        # D_KL(P || Q)
+
+        # Reshae tensor to apply operation to 2D as: (batch * chanels * depth,  height * width)
+        flat_dim = tuple(reduce(lambda x, y: x * y, outputs.shape[:-2]))
+        spatial_dim = tuple(outputs.shape[-2] * outputs.shape[-1])
+        kl = F.kl_div(
+            q.view(flat_dim, spatial_dim).log(),
+            p.view(flat_dim, spatial_dim),
+            reduction='none',
+        )
+        kl_values = kl.sum(-1).view(outputs.shape[:-2])
+        return kl_values
+
+
+class AdaptiveWingLoss(nn.Module):
+    """ implementation of the loss function from  Adaptive Wing Loss for Robust Face Alignment via Heatmap Regression
+      @InProceedings{Wang_2019_ICCV,
+          author      = {Wang, Xinyao and Bo, Liefeng and Fuxin, Li},
+          title       = {Adaptive Wing Loss for Robust Face Alignment via Heatmap Regression},
+          booktitle   = {The IEEE International Conference on Computer Vision (ICCV)},
+          url         = {http://arxiv.org/abs/1904.07399},
+          month       = {October},
+          year        = {2019}
+      }
+      Github Repo: https://github.com/protossw512/AdaptiveWingLoss
+      $$
+      \begin{aligned}
+      RWing(x) = \left\{ \begin{array}{ll}
+                              0 &{} \text {if } |x|< r \\
+                              w \ln (1 + (|x|-r)/\epsilon )   &{} \text {if } r \le |x| < w \\
+                              |x| - C  &{} \text {otherwise}
+                          \end{array}
+                  \right. ,\nonumber \\
+      \end{aligned}
+      $$
+      A = (1=(1 + (=)(􀀀y)))( 􀀀  y)((=)(􀀀y􀀀1))(1=)
+
+      C = (A􀀀! ln(1+(=)􀀀y))
+        """
+
+    def __init__(self, reduction='mean', omega=14.0, theta=0.5, epsilon=1.0, alpha=2.1):
+        super().__init__()
+        self.alpha = float(alpha)
+        self.w = float(omega)
+        self.eps = float(epsilon)
+        self.theta = float(theta)
+        self.reduction = reduction
+
+    def forward(self, outputs, targets):
+
+        # outputs = Softmax_2D(outputs)
+        # targets = Softmax_2D(targets)
+
+        # Calculate thge smoothness factors
+        A = self.w * (1 / (1 + (self.theta / self.eps) ** (self.alpha - targets))) * (self.alpha - targets) * (
+                    (self.theta / self.eps) ** (self.alpha - targets - 1)) / self.eps
+        C = self.theta * A - self.w * torch.log(1 + (self.theta / self.eps) ** (self.alpha - targets))
+
+        # Select the case
+        error_abs = torch.abs(outputs - targets)
+        case1 = error_abs < self.theta
+        case2 = error_abs >= self.theta
+
+        # Compute the loss
+        loss = torch.zeros_like(outputs)
+        loss[case1] = self.w * torch.log( 1 + torch.abs((targets[case1] - outputs[case1]) / self.eps) ** (self.alpha - targets[case1]))
+        loss[case2] = A[case2] * torch.abs(targets[case2] - outputs[case2]) - C[case2]
+
+        if self.reduction is 'mean':
+            return loss.mean()
+        elif self.reduction is 'sum':
+            return loss.sum()
+        return loss
+
+class RMSELoss(nn.Module):
+    """ Calculate the RMSE loss for the 2 predicted heatmaps soft-landmark points
+    :param outputs_coords: (torch.Tensor) outputs channelwise coordinats with the shape [Batch =8, channels=2, depth=32, xy=2]
+    :param targets_coords: (torch.Tensor) targets heatmaps created from landmarks  shape [Batch =8, channels=2, depth=32,  xy=2]
+    """
+    def __init__(self, reduction='mean'):
+        super().__init__()
+        self.reduction = reduction
+
+    def forward(self, outputs_coords, targets_coords):
+        # gt_targets_coords = torch.squeeze(gt_targets_coords, 1)  # Check the targets have dimension [B,Channels=2,D,H,W]
+        l1 = torch.sqrt(torch.mean((outputs_coords[:, 0].float() - targets_coords[:, 0].float()) ** 2))  # [C=0,32,2]
+        l2 = torch.sqrt(torch.mean((outputs_coords[:, 1].float() - targets_coords[:, 1].float()) ** 2))  # [C=0,32,2]
+        if self.reduction is 'sum':
+            loss = torch.sum(torch.stack([l1, l2]).float())
+        else:
+            loss = torch.mean(torch.stack([l1, l2]).float())
+
+
+        return loss
