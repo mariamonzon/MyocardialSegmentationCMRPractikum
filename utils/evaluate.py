@@ -4,8 +4,6 @@ import numpy as np
 import os
 import medpy.metric.binary as mmb
 
-import tensorflow as tf
-import model
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 

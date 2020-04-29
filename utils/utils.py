@@ -7,6 +7,8 @@ import nibabel as nib
 import cv2
 import torch
 import torch.nn as nn
+from pathlib import Path
+
 
 def to_categorical(mask, num_classes, channel='channel_first'):
     assert mask.ndim == 4, "mask should have 4 dims"
@@ -40,14 +42,6 @@ def to_categorical(mask, num_classes, channel='channel_first'):
 def soft_to_hard_pred(pred, channel_axis=1):
     max_value = np.max(pred, axis=channel_axis, keepdims=True)
     return np.where(pred==max_value, 1, 0)
-
-def remove_files(directory='../weights/*'):
-    import os, glob
-    files = glob.glob(directory)
-    for f in files:
-        print(f)
-        os.remove(f)
-    print("Files removed")
 
 
 def read_tf(tfrecord_path):
@@ -85,7 +79,6 @@ def plot_slices(data_vol, label_vol):
     f, plots = plt.subplots(4, 5, sharex='col', sharey='row', figsize=(10, 8))
     for i in range(20):
         intt = np.random.choice(data_vol.shape[0])
-
         plots[i // 5, i % 5].axis('off')
         plots[i // 5, i % 5].imshow(data_vol[intt, 0, :, :], cmap=plt.cm.bone)
         plots[i // 5, i % 5].imshow(label_vol[intt, 0, :,:], alpha=0.5)
@@ -190,6 +183,12 @@ def adjust_learning_rate(optimizer, i_iter, cfg, learning_rate=2.5e-4):
 def adjust_learning_rate_discriminator(optimizer, i_iter, cfg):
     _adjust_learning_rate(optimizer, i_iter, learning_rate=1e-4)
 
+
+def make_directory(path, dir_name):
+    # if not os.path.exists(dir_path):
+    #     os.makedirs(dir_path)
+    dir_path =Path(path).joinpath(dir_name).mkdir(parents=True, exist_ok=True)
+    return dir_path
 
 if __name__ == '__main__':
 
