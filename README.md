@@ -9,13 +9,21 @@ The “masks” folder contains 20 .npy files, where each mask represents the se
 * Label 3:  
 * Label 0: Background
 
-
 ![CMR Image](example_data/myops_training_108_T2_0.png)
-![CMR Mask](example_data/myops_training_108_T2_0.png)
+![CMR Mask] (example_data/myops_training_108_C0_gd_0.png)
 
-*Dataloader: *
-The data loader can be set to use online augmentation in order to overcome the limited data and overfitting problems. 
-% During one epoch the data loader generates 100 augmented images/masks for training iteratively. 
+
+**Dataloader: **
+The data loader can be set to use online augmentation in order to overcome the limited data and overfitting problems. The augmentation is done with albumentation library and can include: 
+
+* Rotation: one from Rotate, VerticalFlip, HorizontalFlip, RandomRotate90, Transpose or   ShiftScaleRotate
+* Cropping: CenterCrop or RandomCrop
+* Contrast Enhancement: RandomBrightnessContrast, RandomGamma  or CLAHE (Contrast Limited Adaptive Histogram Equalization)
+* Noise Addtion:  Gaussian Noise
+* Distrorsion: GridDistortion or Elastic Transform
+* Blurring: One from Blur, MotionBlur or GaussianBlur
+
+An Example of augmented Image and Overlayed mask can be seen here: 
 
 ![Augmented CMR Image and Mask](example_data/108_T2_0.png)
 
