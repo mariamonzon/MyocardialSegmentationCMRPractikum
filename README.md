@@ -10,34 +10,25 @@ The “masks” folder contains 20 .npy files, where each mask represents the se
 * Label 0: Background
 
 
-### Additionally, please answer the following questions about your code:
+![CMR Image and Mask](images_example/.PNG)
 
-* __What, if anything, did you do to verify that the segmentation masks and images were correctly aligned in the data loader?__
-  * You could easily check the image dimension after plotting the first set of images to verify if they are aligned or not. Normally, I always check the following with the data loader:
-     * printing inbetween values to make sure the data is normalized well.
-     * the values are in that specifice range or not.
-     * the input shape is correct or not.
-     * the lables changed to categorical format or not, since I use SoftMax for multi-class segmentation task.
-
-* __What assumptions did you make about the data or model training during this process?__
-  * Very straight forward, this task/challenge is very similar to what we are doing on a daily bases at the lab. This task was not that difficult, and I tried to incorporate a different piece of codes that I wrote for medical data analysis including, data augmentation, normalization, preprocessing and training procedures.
-
-
-
- How to train the model:
+*Dataloader: *
 The data loader can be set to use online augmentation in order to overcome the limited data and overfitting problems. 
 % During one epoch the data loader generates 100 augmented images/masks for training iteratively. 
+
+![CMR Image and Mask](images_example/.PNG)
+
+How to train the model:
 _To train the model, please run the following command, you can change the parameters within the train.py file._
 
-    python -u src\trainer.py -nc 3 -e 150 -f
+    python -u src\trainer.py -nc 3 -e 150
     
-    ***You can update the following default training parameteres:***
-
-    parser.add_argument("-lr", help="to set the learning rate for the unet", type=float, default=0.0001)
+    *** Default training parameteres ***
+    parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.0001)
     parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=300)
     parser.add_argument("-gn", "--gaussianNoise", help="whether to apply gaussian noise", action="store_true",
                         default=True)
-    parser.add_argument("-gpu")
+    parser.add_argument("-gpu",  help="Det the device to use the GPU", type=bool, default=False)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=100)
     parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
     parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=3)
@@ -45,5 +36,14 @@ _To train the model, please run the following command, you can change the parame
     parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=4)
     parser.add_argument("-pt", "--pretrained", help="whether to train from scratch or resume", action="store_true",
                         default=False)
+                        
 
+### Additionally, please answer the following questions about your code:
 
+* __What, if anything, did you do to verify that the segmentation masks and images were correctly aligned in the data loader?__
+  * You could easily check the image dimension after plotting the first set of images to verify if they are aligned or not.
+     * Debug manually step by step to check dimensions and range 
+     * Intermediate plotting of the results.
+
+* __What assumptions did you make about the data or model training during this process?__
+  * 
