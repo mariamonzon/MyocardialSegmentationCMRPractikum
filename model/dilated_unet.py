@@ -131,11 +131,17 @@ class Segmentation_model(nn.Module):
             return output, output_bottleneck
         else:
             return output
+    @staticmethod
+    def plot_model(model, x):
+        with SummaryWriter('graph') as writer:
+            writer.add_graph(model, x)
+            print('model plotted')
 
 if __name__ == '__main__':
     model = Segmentation_model(filters=32, n_block=4)
     x = rand(2, 3, 224, 224)
     output = model(x)
+    model.plot_model(model,x)
     print("finish")
     input()
 
