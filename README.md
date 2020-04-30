@@ -1,28 +1,28 @@
 # Myocardial pathology segmentation combining multi-sequence CMR
 
 
-**Dataset:** The “input"   contains  45 cases of multi-sequence CMR. Each case refers to a patient with three sequence CMR, i.e., LGE, T2 and bSSFP CMR.
-The “masks” folder contains 20 .npy files, where each mask represents the segmentation map of the discs and vertebrae for the corresponding spine image (1.png goes with 1.npy, etc.). 
+**Dataset:** The “input" contains  45 cases of multi-sequence CMR. Each case refers to a patient with three sequence CMR, i.e., LGE, T2 and bSSFP CMR.
+The “masks” folder contains 45 cases of multi-sequence CMR, where each mask represents the segmentation map of the the corresponding CMR Slice image (e.g image: _myops_training_108_CO_0.png_ mask:_myops_training_108_C0_gd_0.png_ ). 
 
-* Label 1: 
-* Label 2:  
-* Label 3:  
+* Label 1: normal myocardium
+* Label 2: edema
+* Label 3: scar
 * Label 0: Background
 
 ![CMR Image](example_data/myops_training_108_T2_0.png)
 ![CMR Mask](example_data/myops_training_108_C0_gd_0.png)
 
-**Dataloader: **
+**Dataloader:**
 The data loader can be set to use online augmentation in order to overcome the limited data and overfitting problems. The augmentation is done with albumentation library and can include: 
 
-* Rotation: one from Rotate, VerticalFlip, HorizontalFlip, RandomRotate90, Transpose or   ShiftScaleRotate
-* Cropping: CenterCrop or RandomCrop
-* Contrast Enhancement: RandomBrightnessContrast, RandomGamma  or CLAHE (Contrast Limited Adaptive Histogram Equalization)
-* Noise Addtion:  Gaussian Noise
-* Distrorsion: GridDistortion or Elastic Transform
-* Blurring: One from Blur, MotionBlur or GaussianBlur
+* _Rotation_: one from Rotate, VerticalFlip, HorizontalFlip, RandomRotate90, Transpose or   ShiftScaleRotate
+* _Cropping_: CenterCrop or RandomCrop
+* _Contrast Enhancement_: RandomBrightnessContrast, RandomGamma  or CLAHE (Contrast Limited Adaptive Histogram Equalization)
+* _Noise Addtion_:  Gaussian Noise
+* _Distrorsion_: GridDistortion or Elastic Transform
+* _Blurring_: One from Blur, MotionBlur or GaussianBlur
 
-An Example of augmented Image and Overlayed mask can be seen here: 
+An Example of augmented Image and overlayed mask can be seen here: 
 
 ![Augmented CMR Image and Mask](example_data/108_T2_0.png)
 
