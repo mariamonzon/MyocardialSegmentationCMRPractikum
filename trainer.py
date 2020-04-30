@@ -67,18 +67,18 @@ class Trainer:
         self.file_to_save_summary = summary_name
         self.logs = 0
         # Set the datasets
-        self.train_dataset = MyOpsDataset( train_path, data_dir, transform =  transform,
-                                           split = True,
-                                           phase = 'train',
-                                           image_size = (self.WIDTH, self.HEIGHT),
-                                           modality = 'T2')
+        self.train_dataset = MyOpsDataset(train_path, data_dir, transform =  transform,
+                                          train_val_split= True,
+                                          phase = 'train',
+                                          image_size = (self.WIDTH, self.HEIGHT),
+                                          modality = 'T2')
         train_params = {'batch_size': batch_size, 'shuffle': True, 'num_workers': 4}
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
-        self.val_dataloader = DataLoader(MyOpsDataset( self.val_path , data_dir,
-                                                       split = True,
-                                                       phase = 'valid',
-                                                       image_size =  (self.WIDTH, self.HEIGHT),
-                                                       modality = 'T2'),
+        self.val_dataloader = DataLoader(MyOpsDataset(self.val_path, data_dir,
+                                                      train_val_split= True,
+                                                      phase = 'valid',
+                                                      image_size =  (self.WIDTH, self.HEIGHT),
+                                                      modality = 'T2'),
                                          batch_size=1, shuffle= False)
 
         self.earlystop = EarlyStoppingCallback(patience=10, mode="max")
@@ -213,11 +213,11 @@ class Trainer:
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-lr", help="to set the learning rate for the unet", type=float, default=0.0001)
+    parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.0001)
     parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=300)
     parser.add_argument("-gn", "--gaussianNoise", help="whether to apply gaussian noise", action="store_true",
                         default=True)
-    parser.add_argument("-gpu")
+    parser.add_argument("-gpu",  help="Det the device to use the GPU", type=bool, default=False)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=100)
     parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
     parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=3)

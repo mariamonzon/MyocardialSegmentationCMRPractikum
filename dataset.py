@@ -43,7 +43,7 @@ from PIL import Image
 from pathlib import Path
 
 class MyOpsDataset(Dataset):
-    def __init__(self, csv_path, root_path, transform = False, split = True, phase = 'train', image_size = (256, 256), modality = 'T2'):
+    def __init__(self, csv_path, root_path, transform = False, series_id = "",   train_val_split = True, phase ='train', image_size = (256, 256), modality = ['CO', 'DE', 'T2']):
         """
             csv_path (string): path to csv file
             img_path (string): path to the folder where images are
@@ -57,11 +57,12 @@ class MyOpsDataset(Dataset):
                             distorsion = params.get('distorsion', False)
         """
         self.file_names = pd.read_csv(csv_path, delimiter=';')
-        if split and phase is 'train':
-            self.file_names =  self.file_names[:int(0.85*self.__len__())]
-        elif split and phase is 'valid':
-            self.file_names = self.file_names [int(0.85 * self.__len__()):]
-        self.modality = modality
+        # if Path( series_id ).is_file():
+        #     self.series_id = pd.read_csv( series_id , delimiter=';')
+        if train_val_split and Path( series_id ).is_file():
+            self.series_id = pd.read_csv( series_id , header=None, delimiter=';')
+            self.file_names =self.split_idx()
+        self.modality = modality if isinstance(modality, list) else [modality]
         if Path(root_path).is_absolute():
             self.root_dir =  Path(root_path)
         else:
@@ -78,10 +79,9 @@ class MyOpsDataset(Dataset):
     def __getitem__(self, idx):
         # mask  = self.file_names['img'].iloc[idx]['mask']
         # TODO: change to cv2
-        image = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx]['img_'+ self.modality] ) )
+        image = self.load_image(idx)
+        # image = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx]['img_'+self.modality[0]], mode='RGB' ))
         mask = np.array(self.PIL_loader(self.root_dir, 'masks/'+ self.file_names.iloc[idx]['mask']) )
-        # image = self.image_loader(self.root_dir, self.file_names.iloc[idx]['img'] )
-        # mask = self.image_loader(self.root_dir, self.file_names.iloc[idx]['mask'] )
         if self.data_augmentation:
             sample = Compose( self.data_augmentation)(image=image, mask=mask)
         return sample
@@ -89,12 +89,18 @@ class MyOpsDataset(Dataset):
     def __add__(self, other):
         return ConcatDataset([self, other])
 
+    def split_idx(self): #TODO: find more efficient choose series
+        file_names = self.file_names[0]
+        for id in  self.series_id[0].values:
+            selection = self.file_names[ self.file_names["mask"].str.contains(id) == True]
+            file_names = file_names.append(selection)
+        self.file_names = file_names
 
     def normalization(self):
         # Running Normalization of the dataset
         running_mean = 0
         running_std= 0
-        for p in  self.file_names['img_'+ self.modality ]:
+        for p in  self.file_names['img_'+ self.modality[0] ]:
             images = np.array(self.PIL_loader( self.root_dir , 'train/'+ p ) )
             mean, std = images.mean(), images.std()
             running_mean += mean.item()
@@ -109,7 +115,7 @@ class MyOpsDataset(Dataset):
     def save_check_data(self, **kwargs):
         """ For debugging purposes """
         result_dir = kwargs.get('result_dir', self.root_dir )
-        result_dir = make_directory(result_dir, "data_processed_vis_"+ self.modality)
+        result_dir = make_directory(result_dir, "data_processed_visualization")
         set_matplotlib_params()
         reds  = colormap_transparent(1,0,0)
         for idx in range(self.__len__()):
@@ -119,22 +125,30 @@ class MyOpsDataset(Dataset):
             image = np.asarray(sample['image']).astype(np.float64)
             mask  = np.asarray(sample['mask']).astype(np.float64)
             fig = plt.figure(figsize=(6.40, 6.40))
-            image_name = self.file_names.iloc[idx]['img_'+ self.modality].split('_')
-            plt.title("Image " +  image_name[2] + ' modality ' + self.modality + " slice " +  image_name[-1][0])
+            image_name =  self.file_names.iloc[idx]['mask'].split('_')
+            plt.title("Image " +  image_name[2]  + " slice " +  image_name[-1][0])
             plt.imshow(image, cmap='gray', interpolation='lanczos')
             plt.imshow(mask, cmap=reds, interpolation='lanczos')
             plt.axis('off')
             plt.tight_layout(rect=[0, 0.03, 1, 0.93])
-            fig.savefig(result_dir.joinpath( str( '_').join(image_name[2:] )) )
+            fig.savefig(result_dir.joinpath( str( '_').join([image_name[2]] + image_name[4:] )) )
             plt.close()
         print("The previsualization of the data is saved in folder: " + str(result_dir))
         html(result_dir, '*', '.png', title='dataset_visualization')
 
     @staticmethod
-    def PIL_loader(path, filename="", mode = 'RGB'):
+    def PIL_loader(path, filename="", mode = 'L'):
         with open(Path(path).joinpath(filename), 'rb') as f:
             with Image.open(f) as img:
                 return img.convert( mode )
+
+    def load_image(self,idx ):
+        image = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx]['img_'+self.modality[0]], mode='RGB'))
+        if len(self.modality)>1:
+            for i, m in enumerate(self.modality):
+                image[:,:,i] = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx]['img_'+ m ], mode='L'))
+        return image
+
 
     @staticmethod
     def image_loader(path, filename):
@@ -207,8 +221,8 @@ class MyOpsDataset(Dataset):
 
 
 if __name__ == "__main__":
-    file_names = pd.read_csv("./input/images_masks_full.csv")
-    dataset = MyOpsDataset("./input/images_mask_T2.csv", "./input" )
+    dataset = MyOpsDataset("./input/images_masks_full.csv", "./input", series_id= "./input/series_ID.csv")
+    dataset.__getitem__(0)
     dataset.save_check_data()
     params = {'batch_size': 64, 'shuffle': True, 'num_workers': 6}
     dataloader = DataLoader(dataset,**params)
