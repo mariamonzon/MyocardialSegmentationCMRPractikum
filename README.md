@@ -10,8 +10,7 @@ The “masks” folder contains 20 .npy files, where each mask represents the se
 * Label 0: Background
 
 ![CMR Image](example_data/myops_training_108_T2_0.png)
-![CMR Mask] (example_data/myops_training_108_C0_gd_0.png)
-
+![CMR Mask](example_data/myops_training_108_C0_gd_0.png)
 
 **Dataloader: **
 The data loader can be set to use online augmentation in order to overcome the limited data and overfitting problems. The augmentation is done with albumentation library and can include: 
