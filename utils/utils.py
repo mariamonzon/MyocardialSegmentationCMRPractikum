@@ -43,6 +43,10 @@ def soft_to_hard_pred(pred, channel_axis=1):
     max_value = np.max(pred, axis=channel_axis, keepdims=True)
     return np.where(pred==max_value, 1, 0)
 
+def hard_predicton(pred_tensor, channel =1):
+    max = pred_tensor.max(channel, keepdim = True)
+    return torch.where(pred_tensor == max, 1., 0.)
+
 
 def read_tf(tfrecord_path):
     raw_image_dataset = tf.data.TFRecordDataset(tfrecord_path)
@@ -93,10 +97,8 @@ def load_nii(img_path):
 
     Parameters
     ----------
-
     img_path: string
     String with the path of the 'nii' or 'nii.gz' image file name.
-
     Returns
     -------
     Three element, the first is a numpy array of the image values,

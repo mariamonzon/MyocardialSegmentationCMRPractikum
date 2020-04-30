@@ -1,6 +1,6 @@
 import numpy as np
 from torch import save
-
+from utils.save_data import make_directory
 
 class EarlyStoppingCallback:
 
@@ -31,11 +31,11 @@ class EarlyStoppingCallback:
 
 class ModelCheckPointCallback:
 
-    def __init__(self, mode="min", model_name="../weights/model_checkpoint.pt", entire_model=False):
+    def    __init__(self, mode="min", model_path= "../weights/", model_name ="model_checkpoint.pth.tar",  entire_model=False):
         assert mode=="max" or mode=="min", "mode can only be /'min/' or /'max/'"
         self.mode = mode
         self.best_result = np.Inf if mode=='min' else np.NINF
-        self.model_name = model_name
+        self.model_path =  make_directory( model_path, model_name)
         self.entire_model = entire_model
         self.epoch = 0
 
@@ -54,11 +54,5 @@ class ModelCheckPointCallback:
                 to_save = model
             else:
                 to_save = model.state_dict()
-            save(to_save, self.model_name)
+            save(to_save, self.model_path)
 
-def print_network(net):
-    num_params = 0
-    for param in net.parameters():
-        num_params += param.numel()
-    print(net)
-    print('Total number of parameters: %d' % num_params)

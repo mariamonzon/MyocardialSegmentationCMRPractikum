@@ -5,6 +5,22 @@ from torch.autograd import Variable
 from math import log
 
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
+class LossMeter:
+    def __init__(self):
+        self.loss_value = 0
+        self.sum = 0
+        self.count = 0
+        self.avg = 0
+
+    def update(self, value,  n=1):
+        """Update the counters parameters for the Loss"""
+        self.sum +=  value * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+    def get_avg_loss(self):
+        return self.avg
+
 
 class CrossEntropy2d(nn.Module):
 
@@ -46,38 +62,182 @@ def bce_loss(y_pred, y_label):
 
 class DiceCoefMultilabelLoss(nn.Module):
 
-    def __init__(self, cuda=True):
-        super().__init__()
+    def __init__(self, numLabels=4, channel='channel_first'):
+        super().__init__( )
         # self.smooth = torch.tensor(1., dtype=torch.float32)
         self.one = torch.tensor(1., dtype=torch.float32).cuda()
         self.activation = torch.nn.Softmax2d()
+        self.numLables = numLabels
+        self.channel= channel
+        assert channel is 'channel_first' or channel == 'channel_last', r"channel has to be 'channel_first' or ''channel_last"
 
-    def dice_loss(self, predict, target):
-        predict = predict.contiguous().view(-1)
-        target = target.contiguous().view(-1)
-        intersection = predict * target.cuda().float()
-        score = (intersection.sum() * 2. + 1.) / (predict.sum() + target.sum() + 1.)
+    @staticmethod
+    def dice_loss(predict, target, smooth=1.):
+        intersection = predict.contiguous().view(-1) *  target.contiguous().view(-1)
+        score = (intersection.sum() * 2. + smooth) / (predict.sum() + target.sum()  + smooth)
         return 1. - score
 
-    def forward(self, predict, target, numLabels=4, channel='channel_first'):
-        assert channel == 'channel_first' or channel == 'channel_last', r"channel has to be either 'channel_first' or 'channel_last'"
+    def forward(self, predict, target):
         dice = 0
         predict = self.activation(predict)
-        if channel == 'channel_first':
-            for index in range(numLabels):
+        if self.channel == 'channel_first':
+            for c in range(self.numLabels):
                 # Lme = [0.1, 0.1, 0.3, 0.5]
-                temp = self.dice_loss(predict[:, index, :, :], target[:, index, :, :])
+                temp = self.dice_loss(predict[:, c, :, :], target[:, c, :, :])
                 dice += temp
         else:
-            for index in range(numLabels):
+            for c in range(self.numLabels):
                 # Lme = [0.1, 0.1, 0.3, 0.5]
-                temp = self.dice_loss(predict[:, :, :, index], target[:, :, :, index])
+                temp = self.dice_loss(predict[:, :, :, c], target[:, :, :, c])
                 dice += temp
 
-        dice = dice / numLabels
+        dice = dice /self.numLabels
 
         # entropy = entropy_loss(y_true) + ent
         return dice
+
+
+
+class GeneralizedDiceLoss(nn.Module):
+    """Computes Generalized Dice Loss (GDL) as described in https://arxiv.org/pdf/1707.03237.pdf.
+    """
+
+    def __init__(self, classes=4, sigmoid_normalization=True, skip_index_after=None, epsilon=1e-6,):
+        super().__init__(weight=None, sigmoid_normalization=sigmoid_normalization)
+        self.classes = None
+        self.skip_index_after = None
+        self.register_buffer('weight', weight)
+        self.epsilon = epsilon
+        self.classes = classes
+        if skip_index_after is not None:
+            self.skip_index_after = skip_index_after
+        if sigmoid_normalization:
+            self.normalization = nn.Sigmoid()
+        else:
+            self.normalization = nn.Softmax(dim=1)
+
+    def expand_as_one_hot(input, C, ignore_index=None):
+        """
+        Converts NxDxHxW label image to NxCxDxHxW, where each label gets converted to its corresponding one-hot vector
+        :param input: 4D input image (NxDxHxW)
+        :param C: number of channels/labels
+        :param ignore_index: ignore index to be kept during the expansion
+        :return: 5D output image (NxCxDxHxW)
+        """
+        if input.dim() == 5:
+            return input
+        assert input.dim() == 4
+
+        # expand the input tensor to Nx1xDxHxW before scattering
+        input = input.unsqueeze(1)
+        # create result tensor shape (NxCxDxHxW)
+        shape = list(input.size())
+        shape[1] = C
+
+        if ignore_index is not None:
+            # create ignore_index mask for the result
+            mask = input.expand(shape) == ignore_index
+            # clone the lib tensor and zero out ignore_index in the input
+            input = input.clone()
+            input[input == ignore_index] = 0
+            # scatter to get the one-hot tensor
+            result = torch.zeros(shape).to(input.device).scatter_(1, input, 1)
+            # bring back the ignore_index in the result
+            result[mask] = ignore_index
+            return result
+        else:
+            # scatter to get the one-hot tensor
+            return torch.zeros(shape).to(input.device).scatter_(1, input, 1)
+
+
+    def compute_per_channel_dice(self,input, target, epsilon=1e-6, weight=None):
+        """
+        Computes DiceCoefficient as defined in https://arxiv.org/abs/1606.04797 given  a multi channel input and target.
+        Assumes the input is a normalized probability, e.g. a result of Sigmoid or Softmax function.
+        Args:
+             input (torch.Tensor): NxCxSpatial input tensor
+             target (torch.Tensor): NxCxSpatial target tensor
+             epsilon (float): prevents division by zero
+             weight (torch.Tensor): Cx1 tensor of weight per channel/class
+        """
+
+        # input and target shapes must match
+        assert input.size() == target.size(), "'input' and 'target' must have the same shape"
+
+        input  = self.flatten(input)
+        target = self.flatten(target)
+        target = target.float()
+
+        # compute per channel Dice Coefficient
+        intersect = (input * target).sum(-1)
+        if weight is not None:
+            intersect = weight * intersect
+
+        # here we can use standard dice (input + target).sum(-1) or extension (see V-Net) (input^2 + target^2).sum(-1)
+        denominator = (input * input).sum(-1) + (target * target).sum(-1)
+        return 2 * (intersect / denominator.clamp(min=epsilon))
+
+    @staticmethod
+    def flatten(tensor):
+        """Flattens a given tensor such that the channel axis is first.
+        The shapes are transformed as follows:
+           (N, C, D, H, W) -> (C, N * D * H * W)
+        """
+        # number of channels
+        C = tensor.size(1)
+        # new axis order
+        axis_order = (1, 0) + tuple(range(2, tensor.dim()))
+        # Transpose: (N, C, H, W) -> (C, N, H, W)
+        transposed = tensor.permute(axis_order)
+        # Flatten: (C, N, H, W) -> (C, N * H * W)
+        return transposed.contiguous().view(C, -1)
+
+    def dice(self, input, target, weight):
+        assert input.size() == target.size()
+        input  = self.flatten(input)
+        target = self.flatten(target)
+        target = target.float()
+
+        if input.size(0) == 1:
+            # for GDL to make sense we need at least 2 channels
+            input = torch.cat((input, 1 - input), dim=0)
+            target = torch.cat((target, 1 - target), dim=0)
+
+        # GDL weighting: the contribution of each label is corrected by the inverse of its volume
+        w_l = target.sum(-1)
+        w_l = 1 / (w_l * w_l).clamp(min=self.epsilon)
+        w_l.requires_grad = False
+
+        intersect = (input * target).sum(-1)
+        intersect = intersect * w_l
+
+        denominator = (input + target).sum(-1)
+        denominator = (denominator * w_l).clamp(min=self.epsilon)
+
+        return 2 * (intersect.sum() / denominator.sum())
+
+    def forward(self, input, target):
+        """
+        Expand to one hot added extra for consistency reasons
+        """
+        target = self.expand_as_one_hot(target.long(), self.classes)
+
+        assert input.dim() == target.dim() == 5 ,"'input' and 'target' have different number of dims"
+
+        if self.skip_index_after is not None:
+            target = self.skip_target_channels(target, self.skip_index_after)
+
+        assert input.size() == target.size(), "'input' and 'target' must have the same shape"
+        # get probabilities from logits
+        input = self.normalization(input)
+
+        # compute per channel Dice coefficient
+        per_channel_dice = self.dice(input, target, weight=self.weight)
+        loss = (1. - torch.mean(per_channel_dice))
+        per_channel_dice = per_channel_dice.detach().cpu().numpy()
+
+        # average Dice score across all channels/classes
+        return loss, per_channel_dice
 
 
 class ShannonEntropyLoss(nn.Module):
@@ -114,22 +274,22 @@ class FocalLoss(nn.Module):
 
 
 
-
-
 class JensenShannonDiv(nn.Module):
     """ Implementation of theJensenShannonDivergence for 2D images loss function from """
 
     def __init__(self, reduction='mean'):
         super().__init__()
         self.reduction = reduction
+        self.norm =  nn.Softmax2d()
         from scipy.stats import entropy
 
     def forward(self, outputs, targets):
-        output_pdf = Softmax_2D()(outputs)
-        target_pdf = Softmax_2D()(targets)
-        # normalize
+        # normalize to be a pdf
+        output_pdf = self.norm(outputs)
+        target_pdf = self.norm(targets)
         # output_pdf /= output_pdf.sum()
         # target_pdf /= target_pdf.sum()
+
         m = (output_pdf + target_pdf) / 2
         JSD = (self.entropy(output_pdf, m) + self.entropy(output_pdf, target_pdf)) / 2
         if self.reduction is 'mean':
@@ -150,8 +310,8 @@ class KL_Divergence2D(nn.Module):
         self.reduction = reduction
 
     def forward(self, outputs, targets):
-        p = Softmax_2D()(outputs)
-        q = Softmax_2D()(targets)
+        p = nn.Softmax2d()(outputs)
+        q = nn.Softmax2d()(targets)
         # D_KL(P || Q)
 
         # Reshae tensor to apply operation to 2D as: (batch * chanels * depth,  height * width)
