@@ -10,14 +10,14 @@ The “masks” folder contains 20 .npy files, where each mask represents the se
 * Label 0: Background
 
 
-![CMR Image and Mask](images_example/myops_training_108_T2_0.PNG)(images_example/myops_training_108_T2_0.PNG)
+![CMR Image and Mask](images_example/myops_training_108_T2_0.PNG)
 
 
 *Dataloader: *
 The data loader can be set to use online augmentation in order to overcome the limited data and overfitting problems. 
 % During one epoch the data loader generates 100 augmented images/masks for training iteratively. 
 
-![CMR Image and Mask](images_example/.PNG)
+![CMR Image and Mask](images_example/108_T2_0.PNG)
 
 How to train the model:
 _To train the model, please run the following command, you can change the parameters within the train.py file._
