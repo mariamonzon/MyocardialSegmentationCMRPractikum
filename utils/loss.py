@@ -1,10 +1,48 @@
+#!/usr/bin/env python3.7
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from torch.autograd import Variable
 from math import log
-
+from torch import Tensor,  einsum
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
+from typing import  Iterable, Set
+import numpy as np
+
+# Helper Functions
+def uniq(a: Tensor) -> Set:
+    return set(torch.unique(a.cpu()).numpy())
+
+def sset(a: Tensor, sub: Iterable) -> bool:
+    return uniq(a).issubset(sub)
+
+def intersection(a: Tensor, b: Tensor) -> Tensor:
+    assert a.shape == b.shape
+    assert sset(a, [0, 1])
+    assert sset(b, [0, 1])
+    return a & b
+
+
+def union(a: Tensor, b: Tensor) -> Tensor:
+    assert a.shape == b.shape
+    assert sset(a, [0, 1])
+    assert sset(b, [0, 1])
+    return a | b
+
+
+def eq(a: Tensor, b) -> bool:
+    return torch.eq(a, b).all()
+
+
+def simplex(t: Tensor, axis=1) -> bool:
+    _sum = t.sum(axis).type(torch.float32)
+    _ones = torch.ones_like(_sum, dtype=torch.float32)
+    return torch.allclose(_sum, _ones)
+
+def one_hot(t: Tensor, axis=1) -> bool:
+    return simplex(t, axis) and sset(t, [0, 1])
+
+
 class LossMeter:
     def __init__(self):
         self.loss_value = 0
@@ -20,6 +58,120 @@ class LossMeter:
 
     def get_avg_loss(self):
         return self.avg
+
+
+class DiceCoefMultilabelLoss(nn.Module):
+
+    def __init__(self, numLabels=4 ):
+        super().__init__( )
+        self.activation = torch.nn.Softmax2d()
+        self.numLabels = numLabels
+
+    def forward(self, predict, target):
+        dice = 0
+        predict = self.activation(predict)
+
+        for c in range(self.numLabels):
+            # Lme = [0.1, 0.1, 0.3, 0.5]
+            dice += self.dice_coeff(predict[:, c, :, :], target[:, c, :, :])
+        dice = dice /self.numLabels
+
+        return dice
+
+    @staticmethod
+    def dice_coeff(predict, target, smooth=1.):
+        intersection = predict.contiguous().view(-1) *  target.contiguous().view(-1)
+        score = (intersection.sum() * 2. + smooth) / (predict.sum() + target.sum()  + smooth)
+        return 1. - score
+        # intersection = einsum("bcwh,bcwh->bc", predict, target)
+        # union = (einsum("bcwh->bc", predict) + einsum("bcwh->bc", target))
+        # loss =  1 - (2 * intersection + 1e-10) / (union + 1e-10)
+
+
+class SurfaceLoss(nn.Module):
+
+    def __init__(self, numLabels=4):
+        super().__init__()
+        self.activation = torch.nn.Softmax2d()
+        self.numLabels = numLabels
+
+    def forward(self, predict, target_maps):
+    # def __call__(self, probs: Tensor, dist_maps: Tensor, _: Tensor) -> Tensor:
+        loss = 0.
+        for c in range(self.numLabels):
+            loss += predict[:, c, :, :].mul(target_maps[:, c, :, :])
+        return loss/self.numLabels
+
+class BoundaryLoss(nn.Module):
+    """Boundary Loss proposed in:
+    Alexey Bokhovkin et al., Boundary Loss for Remote Sensing Imagery Semantic Segmentation
+    https://arxiv.org/abs/1905.07852
+    """
+
+    def __init__(self, theta0=3, theta=5):
+        super().__init__()
+        self.theta0 = theta0
+        self.theta = theta
+
+    @staticmethod
+    def one_hot(label, n_classes, requires_grad=True):
+        """Return One Hot Label"""
+        one_hot_label = torch.eye(
+            n_classes, device=label.device, requires_grad=requires_grad)[label]
+        one_hot_label = one_hot_label.transpose(1, 3).transpose(2, 3)
+        return one_hot_label
+
+    def forward(self, pred, gt):
+        """
+        Input:
+            - pred: the output from model (before softmax)
+                    shape (N, C, H, W)
+            - gt: ground truth map
+                    shape (N, H, w)
+        Return:
+            - boundary loss, averaged over mini-bathc
+        """
+
+        n, c, _, _ = pred.shape
+
+        # softmax so that predicted map can be distributed in [0, 1]
+        pred = torch.softmax(pred, dim=1)
+
+        # one-hot vector of ground truth
+        one_hot_gt = one_hot(gt, c)
+
+        # boundary map
+        gt_b = F.max_pool2d(
+            1 - one_hot_gt, kernel_size=self.theta0, stride=1, padding=(self.theta0 - 1) // 2)
+        gt_b -= 1 - one_hot_gt
+
+        pred_b = F.max_pool2d(
+            1 - pred, kernel_size=self.theta0, stride=1, padding=(self.theta0 - 1) // 2)
+        pred_b -= 1 - pred
+
+        # extended boundary map
+        gt_b_ext = F.max_pool2d(
+            gt_b, kernel_size=self.theta, stride=1, padding=(self.theta - 1) // 2)
+
+        pred_b_ext = F.max_pool2d(
+            pred_b, kernel_size=self.theta, stride=1, padding=(self.theta - 1) // 2)
+
+        # reshape
+        gt_b = gt_b.view(n, c, -1)
+        pred_b = pred_b.view(n, c, -1)
+        gt_b_ext = gt_b_ext.view(n, c, -1)
+        pred_b_ext = pred_b_ext.view(n, c, -1)
+
+        # Precision, Recall
+        P = torch.sum(pred_b * gt_b_ext, dim=2) / (torch.sum(pred_b, dim=2) + 1e-7)
+        R = torch.sum(pred_b_ext * gt_b, dim=2) / (torch.sum(gt_b, dim=2) + 1e-7)
+
+        # Boundary F1 Score
+        BF1 = 2 * P * R / (P + R + 1e-7)
+
+        # summing BF1 Score for each class and average over mini-batch
+        loss = torch.mean(1 - BF1)
+        return loss
 
 
 class CrossEntropy2d(nn.Module):
@@ -54,47 +206,32 @@ class CrossEntropy2d(nn.Module):
         return loss
 
 
-def bce_loss(y_pred, y_label):
-    y_truth_tensor = torch.FloatTensor(y_pred.size())
-    y_truth_tensor.fill_(y_label)
-    y_truth_tensor = y_truth_tensor.to(y_pred.get_device())
-    return nn.BCEWithLogitsLoss()(y_pred, y_truth_tensor)
+class TverskyLoss(nn.Module):
+    def __init__(self, alpha = 0.5 ,  beta = 0.5):
+        self.alpha = alpha
+        self.beta = beta
 
-class DiceCoefMultilabelLoss(nn.Module):
+    def forward(self, y_pred, y_true, weight=None):
+        ones = torch.ones_like(y_true)
+        p0 = y_pred
+        p1 = ones - y_pred  # proba that voxels are not class i
+        g0 = y_true
+        g1 = ones - y_true
 
-    def __init__(self, numLabels=4, channel='channel_first'):
-        super().__init__( )
-        # self.smooth = torch.tensor(1., dtype=torch.float32)
-        self.one = torch.tensor(1., dtype=torch.float32).cuda()
-        self.activation = torch.nn.Softmax2d()
-        self.numLables = numLabels
-        self.channel= channel
-        assert channel is 'channel_first' or channel == 'channel_last', r"channel has to be 'channel_first' or ''channel_last"
+        num = torch.sum(p0 * g0, (0, 1, 2, 3))
+        den = num + self.alpha * torch.sum(p0 * g1, (0, 1, 2, 3)) + self.beta * torch.sum(p1 * g0, (0, 1, 2, 3))
 
-    @staticmethod
-    def dice_loss(predict, target, smooth=1.):
-        intersection = predict.contiguous().view(-1) *  target.contiguous().view(-1)
-        score = (intersection.sum() * 2. + smooth) / (predict.sum() + target.sum()  + smooth)
-        return 1. - score
+        T = torch.sum(num / den)  # when summing over classes, T has dynamic range [0 Ncl]
 
-    def forward(self, predict, target):
-        dice = 0
-        predict = self.activation(predict)
-        if self.channel == 'channel_first':
-            for c in range(self.numLabels):
-                # Lme = [0.1, 0.1, 0.3, 0.5]
-                temp = self.dice_loss(predict[:, c, :, :], target[:, c, :, :])
-                dice += temp
-        else:
-            for c in range(self.numLabels):
-                # Lme = [0.1, 0.1, 0.3, 0.5]
-                temp = self.dice_loss(predict[:, :, :, c], target[:, :, :, c])
-                dice += temp
+        Ncl = torch.cast(torch.shape(y_true)[-1], 'float32')
+        return Ncl - T
 
-        dice = dice /self.numLabels
 
-        # entropy = entropy_loss(y_true) + ent
-        return dice
+        def focal_tversky(self, y_true, y_pred):
+            pt_1 = self.forward(self, y_pred, y_true, weight=None)
+            gamma = 0.75
+            return torch.pow((1 - pt_1), gamma)
+
 
 
 
@@ -106,7 +243,7 @@ class GeneralizedDiceLoss(nn.Module):
         super().__init__(weight=None, sigmoid_normalization=sigmoid_normalization)
         self.classes = None
         self.skip_index_after = None
-        self.register_buffer('weight', weight)
+        #~        self.register_buffer('weight', weight)
         self.epsilon = epsilon
         self.classes = classes
         if skip_index_after is not None:
@@ -116,6 +253,7 @@ class GeneralizedDiceLoss(nn.Module):
         else:
             self.normalization = nn.Softmax(dim=1)
 
+    @staticmethod
     def expand_as_one_hot(input, C, ignore_index=None):
         """
         Converts NxDxHxW label image to NxCxDxHxW, where each label gets converted to its corresponding one-hot vector
@@ -306,8 +444,10 @@ class JensenShannonDiv(nn.Module):
 class KL_Divergence2D(nn.Module):
 
     def __init__(self, reduction='mean'):
+
         super().__init__()
         self.reduction = reduction
+
 
     def forward(self, outputs, targets):
         p = nn.Softmax2d()(outputs)
@@ -315,7 +455,7 @@ class KL_Divergence2D(nn.Module):
         # D_KL(P || Q)
 
         # Reshae tensor to apply operation to 2D as: (batch * chanels * depth,  height * width)
-        flat_dim = tuple(reduce(lambda x, y: x * y, outputs.shape[:-2]))
+        flat_dim = np.prod(outputs.shape[:-2])
         spatial_dim = tuple(outputs.shape[-2] * outputs.shape[-1])
         kl = F.kl_div(
             q.view(flat_dim, spatial_dim).log(),
@@ -324,85 +464,3 @@ class KL_Divergence2D(nn.Module):
         )
         kl_values = kl.sum(-1).view(outputs.shape[:-2])
         return kl_values
-
-
-class AdaptiveWingLoss(nn.Module):
-    """ implementation of the loss function from  Adaptive Wing Loss for Robust Face Alignment via Heatmap Regression
-      @InProceedings{Wang_2019_ICCV,
-          author      = {Wang, Xinyao and Bo, Liefeng and Fuxin, Li},
-          title       = {Adaptive Wing Loss for Robust Face Alignment via Heatmap Regression},
-          booktitle   = {The IEEE International Conference on Computer Vision (ICCV)},
-          url         = {http://arxiv.org/abs/1904.07399},
-          month       = {October},
-          year        = {2019}
-      }
-      Github Repo: https://github.com/protossw512/AdaptiveWingLoss
-      $$
-      \begin{aligned}
-      RWing(x) = \left\{ \begin{array}{ll}
-                              0 &{} \text {if } |x|< r \\
-                              w \ln (1 + (|x|-r)/\epsilon )   &{} \text {if } r \le |x| < w \\
-                              |x| - C  &{} \text {otherwise}
-                          \end{array}
-                  \right. ,\nonumber \\
-      \end{aligned}
-      $$
-      A = (1=(1 + (=)(􀀀y)))( 􀀀  y)((=)(􀀀y􀀀1))(1=)
-
-      C = (A􀀀! ln(1+(=)􀀀y))
-        """
-
-    def __init__(self, reduction='mean', omega=14.0, theta=0.5, epsilon=1.0, alpha=2.1):
-        super().__init__()
-        self.alpha = float(alpha)
-        self.w = float(omega)
-        self.eps = float(epsilon)
-        self.theta = float(theta)
-        self.reduction = reduction
-
-    def forward(self, outputs, targets):
-
-        # outputs = Softmax_2D(outputs)
-        # targets = Softmax_2D(targets)
-
-        # Calculate thge smoothness factors
-        A = self.w * (1 / (1 + (self.theta / self.eps) ** (self.alpha - targets))) * (self.alpha - targets) * (
-                    (self.theta / self.eps) ** (self.alpha - targets - 1)) / self.eps
-        C = self.theta * A - self.w * torch.log(1 + (self.theta / self.eps) ** (self.alpha - targets))
-
-        # Select the case
-        error_abs = torch.abs(outputs - targets)
-        case1 = error_abs < self.theta
-        case2 = error_abs >= self.theta
-
-        # Compute the loss
-        loss = torch.zeros_like(outputs)
-        loss[case1] = self.w * torch.log( 1 + torch.abs((targets[case1] - outputs[case1]) / self.eps) ** (self.alpha - targets[case1]))
-        loss[case2] = A[case2] * torch.abs(targets[case2] - outputs[case2]) - C[case2]
-
-        if self.reduction is 'mean':
-            return loss.mean()
-        elif self.reduction is 'sum':
-            return loss.sum()
-        return loss
-
-class RMSELoss(nn.Module):
-    """ Calculate the RMSE loss for the 2 predicted heatmaps soft-landmark points
-    :param outputs_coords: (torch.Tensor) outputs channelwise coordinats with the shape [Batch =8, channels=2, depth=32, xy=2]
-    :param targets_coords: (torch.Tensor) targets heatmaps created from landmarks  shape [Batch =8, channels=2, depth=32,  xy=2]
-    """
-    def __init__(self, reduction='mean'):
-        super().__init__()
-        self.reduction = reduction
-
-    def forward(self, outputs_coords, targets_coords):
-        # gt_targets_coords = torch.squeeze(gt_targets_coords, 1)  # Check the targets have dimension [B,Channels=2,D,H,W]
-        l1 = torch.sqrt(torch.mean((outputs_coords[:, 0].float() - targets_coords[:, 0].float()) ** 2))  # [C=0,32,2]
-        l2 = torch.sqrt(torch.mean((outputs_coords[:, 1].float() - targets_coords[:, 1].float()) ** 2))  # [C=0,32,2]
-        if self.reduction is 'sum':
-            loss = torch.sum(torch.stack([l1, l2]).float())
-        else:
-            loss = torch.mean(torch.stack([l1, l2]).float())
-
-
-        return loss
