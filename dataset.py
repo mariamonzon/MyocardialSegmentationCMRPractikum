@@ -57,8 +57,8 @@ class MyOpsDataset(Dataset):
         self.file_names = pd.read_csv(csv_path, delimiter=';')
         # if Path( series_id ).is_file():
         #     self.series_id = pd.read_csv( series_id , delimiter=';')
-        if train_val_split and Path( series_id ).is_file():
-            self.series_id = pd.read_csv( series_id , header=None, delimiter=';')
+        if train_val_split and series_id is not "":
+            self.series_id = list(series_id)
             self.file_names =self.split_idx()
         self.modality = modality if isinstance(modality, list) else [modality]
         if Path(root_path).is_absolute():
@@ -88,8 +88,9 @@ class MyOpsDataset(Dataset):
         return ConcatDataset([self, other])
 
     def split_idx(self): #TODO: find more efficient choose series
-        file_names = self.file_names[0]
-        for id in  self.series_id[0].values:
+        # file_names = self.file_names.iloc[0]
+        file_names = pd.DataFrame(columns=self.file_names.columns)
+        for id in  self.series_id: #[0].values:
             selection = self.file_names[ self.file_names["mask"].str.contains(id) == True]
             file_names = file_names.append(selection)
         self.file_names = file_names

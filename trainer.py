@@ -70,7 +70,7 @@ class Trainer:
         self.logs = 0
         # Set the datasets
         self.train_dataset = MyOpsDataset(train_path, data_dir, transform =  transform,
-                                          series_id=IDs,
+                                          series_id=IDs.astype(str),
                                           train_val_split= True,
                                           phase = 'train',
                                           image_size = (self.WIDTH, self.HEIGHT),
@@ -79,7 +79,7 @@ class Trainer:
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
         self.val_dataloader = DataLoader(MyOpsDataset(self.val_path, data_dir,
                                                       train_val_split= True,
-                                                      series_id=valid_id,
+                                                      series_id= valid_id.astype(str),
                                                       phase = 'valid',
                                                       image_size =  (self.WIDTH, self.HEIGHT),
                                                       modality = 'T2'),
@@ -246,7 +246,7 @@ if __name__ == '__main__':
 
     for i in range(CV):
         valid_id = IDS[5*i:5*(i+1)]
-        train_id = IDS[~np.in1d(valid_id, IDS)]
+        train_id = IDS[~np.in1d( IDS, valid_id)]
         print("The Train IDs are ", train_id)
 
         model = Segmentation_model(filters=args.n_filter,
@@ -262,7 +262,7 @@ if __name__ == '__main__':
                             train_path="./input/images_masks_full.csv",
                             data_dir = "./input/",
                              IDs=train_id,
-                             valid_id=valid_id,
+                            valid_id=valid_id,
                             width= 32,
                             height=32,
                             batch_size=args.batch_size,  # 8
