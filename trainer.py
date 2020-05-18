@@ -28,12 +28,14 @@ class Trainer:
                  train_path="./input/images_masks_full.csv",
                  data_dir = "./input/",
                  validation_path= "",
+                 IDs="",
+                 valid_id="",
                  width=256,
                  height=256,  #image size
                  batch_size=4,
                  n_epoch=100,
                  gpu = False,
-                 loss = DiceCoefMultilabelLoss(numLabels=4, channel='channel_first' ),
+                 loss = DiceCoefMultilabelLoss(numLabels=4),
                  lr= 0.001,
                  apply_scheduler=True,  # learning rates
                  transform=False,
@@ -68,6 +70,7 @@ class Trainer:
         self.logs = 0
         # Set the datasets
         self.train_dataset = MyOpsDataset(train_path, data_dir, transform =  transform,
+                                          series_id=IDs,
                                           train_val_split= True,
                                           phase = 'train',
                                           image_size = (self.WIDTH, self.HEIGHT),
@@ -76,6 +79,7 @@ class Trainer:
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
         self.val_dataloader = DataLoader(MyOpsDataset(self.val_path, data_dir,
                                                       train_val_split= True,
+                                                      series_id=valid_id,
                                                       phase = 'valid',
                                                       image_size =  (self.WIDTH, self.HEIGHT),
                                                       modality = 'T2'),
@@ -145,7 +149,7 @@ class Trainer:
         for iter, data in enumerate(self.train_dataloader):
             image , mask = data['image'].to(self.device), data['mask'].to(self.device)
             self.optim.zero_grad()
-            segmentation, btnck = self.net.forward(image, features_out=True)
+            segmentation, btnck = self.net(image, features_out=True)
             loss =  self.loss(segmentation , mask)
             loss.backward()
             self.optim.step()
@@ -160,6 +164,7 @@ class Trainer:
                 print('Epoch: [{0}][{1}/{2}]\t' 'Loss {loss:.4f} '.format(epoch, iter, len(self.train_dataloader), loss=loss.item() ))
 
 
+
         train_loss = loss_meter.get_avg_loss()
         self.loss_logs['train_loss'].append( loss_meter.get_avg_loss())
         self.loss_logs['train_dice'].append( dice_loss.get_avg_loss())
@@ -172,7 +177,7 @@ class Trainer:
     def train_model(self, train=True, model_name=''):
 
         # record train metrics in tensorboard
-        writer = SummaryWriter(comment=self.model_name)
+        self.writer = SummaryWriter(comment=self.model_name)
         self.loss_logs = { 'train_loss': [], 'train_dice' : [], 'val_loss': [], 'val_dice' : []}
 
         for epoch in range(self.epochs):
@@ -180,7 +185,7 @@ class Trainer:
             #########   TRAINING   ################
             epoch_loss = self.train_epoch(epoch)
             #########   VALIDATION   ################
-            val_loss_epoch= self.validation()
+            val_loss_epoch = self.validation()
 
             # reduceLROnPlateau
             if self.lr_scheduler:
@@ -203,10 +208,10 @@ class Trainer:
         i = 0
         print("write a training summary")
         for t_loss, t_dice, v_loss, v_dice in  zip(self.loss_logs['train_loss'],self.loss_logs['val_loss'] ):
-            writer.add_scalar('Loss/Training', t_loss, i)
-            writer.add_scalar('Loss/Validation', v_loss, i)
+            self.writer.add_scalar('Loss/Training', t_loss, i)
+            self.writer.add_scalar('Loss/Validation', v_loss, i)
             i += 1
-        writer.close()
+        self.writer.close()
         print("Finish training")
 
 
@@ -219,8 +224,8 @@ if __name__ == '__main__':
                         default=True)
     parser.add_argument("-gpu",  help="Det the device to use the GPU", type=bool, default=False)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=100)
-    parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
-    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=3)
+    parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=2)
+    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=6)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
     parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=4)
     parser.add_argument("-pt", "--pretrained", help="whether to train from scratch or resume", action="store_true",
@@ -236,30 +241,41 @@ if __name__ == '__main__':
         comments += ".gaussian_noise"
     print(comments)
 
-    model = Segmentation_model(filters=args.n_filter,
-                                    in_channels=3,
-                                    n_block=args.n_block,
-                                    bottleneck_depth=4,
-                                    n_class=args.n_class)
+    CV = 5
+    IDS = np.arange(101,126)
 
-    if args.pretrained:
-        model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pt'.format(comments)))
+    for i in range(CV):
+        valid_id = IDS[5*i:5*(i+1)]
+        train_id = IDS[~np.in1d(valid_id, IDS)]
+        print("The Train IDs are ", train_id)
 
-    train_obj = Trainer( model,
-                        train_path="./input/images_masks_full.csv",
-                        data_dir = "./input/",
-                        width= 256,
-                        height=256,
-                        batch_size=args.batch_size,  # 8
-                        loss=DiceCoefMultilabelLoss(numLabels=args.n_class),
-                        gaussian_noise=args.gaussianNoise,
-                        lr=args.lr,
-                        n_epoch=args.epochs,
-                        )
+        model = Segmentation_model(filters=args.n_filter,
+                                        in_channels=3,
+                                        n_block=args.n_block,
+                                        bottleneck_depth=4,
+                                        n_class=args.n_class)
 
-    # Train the models
-    start = datetime.now()
-    torch.autograd.set_detect_anomaly(True)
-    train_obj.train_model(model_name=comments)
-    end = datetime.now()
-    print("time elapsed for training (hh:mm:ss.ms) {}".format(end - start))
+        if args.pretrained:
+            model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pt'.format(comments)))
+
+        train_obj = Trainer( model,
+                            train_path="./input/images_masks_full.csv",
+                            data_dir = "./input/",
+                             IDs=train_id,
+                             valid_id=valid_id,
+                            width= 32,
+                            height=32,
+                            batch_size=args.batch_size,  # 8
+                            loss=DiceCoefMultilabelLoss(numLabels=args.n_class),
+                            gaussian_noise=args.gaussianNoise,
+                            lr=args.lr,
+                            n_epoch=args.epochs,
+                            )
+
+        # Train the models
+        print(" Training fold ", i)
+        start = datetime.now()
+        torch.autograd.set_detect_anomaly(True)
+        train_obj.train_model(model_name=comments)
+        end = datetime.now()
+        print("time elapsed for training (hh:mm:ss.ms) {}".format(end - start))

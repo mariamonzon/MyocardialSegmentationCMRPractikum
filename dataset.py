@@ -36,9 +36,7 @@ from albumentations import (
 )
 from albumentations.pytorch.transforms import ToTensorV2, ToTensor
 from utils.save_data import html, make_directory
-from kornia import augmentation
 from torch.utils.data import Dataset, ConcatDataset, DataLoader
-from torchvision import transforms
 from PIL import Image
 from pathlib import Path
 
@@ -149,12 +147,10 @@ class MyOpsDataset(Dataset):
                 image[:,:,i] = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx]['img_'+ m ], mode='L'))
         return image
 
-
     @staticmethod
     def image_loader(path, filename):
         with open(Path(path).joinpath(filename), 'rb') as f:
             return cv2.imread(f,cv2.IMREAD_GRAYSCALE)
-
 
 
     def set_augmentation(self, prob = 0.5, image_size =(256,256), data_augmentation= True, **params): # **kwargs
@@ -166,8 +162,6 @@ class MyOpsDataset(Dataset):
         contrast = params.get(' contrast ', False)
         blur = params.get('blur', False)
         distorsion = params.get('distorsion', False)
-
-
         augmentation = []
 
         if data_augmentation and self.phase is 'train':
@@ -205,60 +199,7 @@ class MyOpsDataset(Dataset):
                         ToTensor(num_classes=4)]
         return augmentation
 
-    # def get_transform_PIL(self, transforms, phase):
-    #     transform = [transforms.Resize(self.image_size),
-    #                  transforms.ToTensor(),
-    #                  transforms.Normalize(mean=[0.485],
-    #                                       std=[0.229])]
-    #
-    #     if self.data_augmentation is False and phase is 'train':
-    #         transform = [transforms.CenterCrop(224),
-    #                      transforms.RandomRotation((-10, 10)),
-    #                      transforms.RandomHorizontalFlip()
-    #                      + transform]
-    #     return transforms.Compose(transform)
-    #
-    def partitions(number, k):
-    '''
-    Distribution of the folds
-    Args:
-        number: number of patients
-        k: folds number
-    '''
-    n_partitions = np.ones(k) * int(number/k)
-    n_partitions[0:(number % k)] += 1
-    return n_partitions
 
-    def get_indices(n_splits = 3, subjects = 145, frames = 20):
-        '''
-        Indices of the set test
-        Args:
-            n_splits: folds number
-            subjects: number of patients
-            frames: length of the sequence of each patient
-        '''
-        l = partitions(subjects, n_splits)
-        fold_sizes = l * frames
-        indices = np.arange(subjects * frames).astype(int)
-        current = 0
-        for fold_size in fold_sizes:
-            start = current
-            stop =  current + fold_size
-            current = stop
-            yield(indices[int(start):int(stop)])
-
-    def k_folds(n_splits = 3, subjects = 145, frames = 20):
-        '''
-        Generates folds for cross validation
-        Args:
-            n_splits: folds number
-            subjects: number of patients
-            frames: length of the sequence of each patient
-        '''
-        indices = np.arange(subjects * frames).astype(int)
-        for test_idx in get_indices(n_splits, subjects, frames):
-            train_idx = np.setdiff1d(indices, test_idx)
-            yield train_idx, test_idx
 
 if __name__ == "__main__":
     dataset = MyOpsDataset("./input/images_masks_full.csv", "./input", series_id= "./input/series_ID.csv")
