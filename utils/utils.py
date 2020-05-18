@@ -1,13 +1,99 @@
 import tensorflow as tf
-tf.enable_eager_execution()
 import numpy as np
 from skimage import measure
 import matplotlib.pyplot as plt
 import nibabel as nib
 import cv2
 import torch
-import torch.nn as nn
 from pathlib import Path
+from torch import Tensor, einsum
+from typing import  Iterable, Set
+from scipy.ndimage import distance_transform_edt
+# tf.enable_eager_execution()
+
+# Helper Functions
+def uniq(a: Tensor) -> Set:
+    return set(torch.unique(a.cpu()).numpy())
+
+def sset(a: Tensor, sub: Iterable) -> bool:
+    return uniq(a).issubset(sub)
+
+def intersection(a: Tensor, b: Tensor) -> Tensor:
+    assert a.shape == b.shape
+    assert sset(a, [0, 1])
+    assert sset(b, [0, 1])
+    return a & b
+
+
+def union(a: Tensor, b: Tensor) -> Tensor:
+    assert a.shape == b.shape
+    assert sset(a, [0, 1])
+    assert sset(b, [0, 1])
+    return a | b
+
+
+def eq(a: Tensor, b) -> bool:
+    return torch.eq(a, b).all()
+
+
+def simplex(t: Tensor, axis=1) -> bool:
+    _sum = t.sum(axis).type(torch.float32)
+    _ones = torch.ones_like(_sum, dtype=torch.float32)
+    return torch.allclose(_sum, _ones)
+
+def one_hot(t: Tensor, axis=1) -> bool:
+    return simplex(t, axis) and sset(t, [0, 1])
+
+
+
+# switch between representations
+def probs2class(probs: Tensor) -> Tensor:
+    b, _, w, h = probs.shape
+    assert simplex(probs)
+
+    res = probs.argmax(dim=1)
+    assert res.shape == (b, w, h)
+
+    return res
+
+
+def class2one_hot(seg: Tensor, C: int) -> Tensor:
+    if len(seg.shape) == 2:
+        seg = seg.unsqueeze(dim=0)
+    assert sset(seg, list(range(C)))
+
+    b, w, h = seg.shape  # type: Tuple[int, int, int]
+
+    res = torch.stack([seg == c for c in range(C)], dim=1).type(torch.int32)
+    assert res.shape == (b, C, w, h)
+    assert one_hot(res)
+
+    return res
+
+
+def probs2one_hot(probs: Tensor) -> Tensor:
+    _, C, _, _ = probs.shape
+    assert simplex(probs)
+
+    res = class2one_hot(probs2class(probs), C)
+    assert res.shape == probs.shape
+    assert one_hot(res)
+
+    return res
+
+
+def one_hot2dist(seg: np.ndarray) -> np.ndarray:
+    assert one_hot(torch.Tensor(seg), axis=0)
+    C: int = len(seg)
+
+    res = np.zeros_like(seg)
+    for c in range(C):
+        posmask = seg[c].astype(np.bool)
+
+        if posmask.any():
+            negmask = ~posmask
+            res[c] = distance_transform_edt(negmask) * negmask - ( distance_transform_edt(posmask) - 1) * posmask
+    return res
 
 
 def to_categorical(mask, num_classes, channel='channel_first'):
@@ -44,7 +130,7 @@ def soft_to_hard_pred(pred, channel_axis=1):
     return np.where(pred==max_value, 1, 0)
 
 def hard_predicton(pred_tensor, channel =1):
-    max = pred_tensor.max(channel, keepdim = True)
+    max = pred_tensor.max(dim =channel, keepdim = True)
     return torch.where(pred_tensor == max, 1., 0.)
 
 
@@ -150,7 +236,6 @@ def preprocess_volume(img_volume):
     """
     :param img_volume: A patient volume
     :return: applying CLAHE and Bilateral filter for contrast enhacnmeent and denoising
-
     """
     prepross_imgs = []
     for i in range(len(img_volume)):

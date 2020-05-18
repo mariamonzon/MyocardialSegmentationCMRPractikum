@@ -6,41 +6,8 @@ from torch.autograd import Variable
 from math import log
 from torch import Tensor,  einsum
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
-from typing import  Iterable, Set
+
 import numpy as np
-
-# Helper Functions
-def uniq(a: Tensor) -> Set:
-    return set(torch.unique(a.cpu()).numpy())
-
-def sset(a: Tensor, sub: Iterable) -> bool:
-    return uniq(a).issubset(sub)
-
-def intersection(a: Tensor, b: Tensor) -> Tensor:
-    assert a.shape == b.shape
-    assert sset(a, [0, 1])
-    assert sset(b, [0, 1])
-    return a & b
-
-
-def union(a: Tensor, b: Tensor) -> Tensor:
-    assert a.shape == b.shape
-    assert sset(a, [0, 1])
-    assert sset(b, [0, 1])
-    return a | b
-
-
-def eq(a: Tensor, b) -> bool:
-    return torch.eq(a, b).all()
-
-
-def simplex(t: Tensor, axis=1) -> bool:
-    _sum = t.sum(axis).type(torch.float32)
-    _ones = torch.ones_like(_sum, dtype=torch.float32)
-    return torch.allclose(_sum, _ones)
-
-def one_hot(t: Tensor, axis=1) -> bool:
-    return simplex(t, axis) and sset(t, [0, 1])
 
 
 class LossMeter:

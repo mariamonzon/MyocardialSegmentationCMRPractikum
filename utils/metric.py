@@ -49,7 +49,7 @@ def dice_coefficient(y_true, y_pred):
 def dice_coefficient_multiclass(y_true, y_pred, numLabels=4):
     dice_metric = 0
     for c in range(1, numLabels):
-        dice_metric += DiceCoefMultilabelLoss.dice_loss(y_true[:, c, :, :], y_pred[:, c, :, :])
+        dice_metric += DiceCoefMultilabelLoss.dice_coeff(y_true[:, c, :, :], y_pred[:, c, :, :])
     dice_metric /= (numLabels - 1)
     return dice_metric
 
