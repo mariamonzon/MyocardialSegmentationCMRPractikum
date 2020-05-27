@@ -3,11 +3,11 @@
 """
 
 import numpy as np
-import cv2
 import pandas as pd
 # from skimage.exposure import match_histograms
 from utils.image_proces_vis import *
 from matplotlib import pyplot as plt
+import nrrd
 from albumentations import (
     Resize,
     PadIfNeeded,
@@ -41,7 +41,7 @@ from PIL import Image
 from pathlib import Path
 
 class MyOpsDataset(Dataset):
-    def __init__(self, csv_path, root_path, transform = False, series_id = "",   train_val_split = True, phase ='train', image_size = (256, 256), modality = ['CO', 'DE', 'T2']):
+    def __init__(self, csv_path, root_path, transform = False, series_id = "", split = True, phase ='train', image_size = (256, 256), modality = ['CO', 'DE', 'T2']):
         """
             csv_path (string): path to csv file
             img_path (string): path to the folder where images are
@@ -57,14 +57,14 @@ class MyOpsDataset(Dataset):
         self.file_names = pd.read_csv(csv_path, delimiter=';')
         # if Path( series_id ).is_file():
         #     self.series_id = pd.read_csv( series_id , delimiter=';')
-        if train_val_split and series_id is not "":
-            self.series_id = list(series_id)
-            self.file_names =self.split_idx()
         self.modality = modality if isinstance(modality, list) else [modality]
+        if split and series_id is not "":
+            self.series_id = list(series_id)
+            self.file_names = self.split_idx()
         if Path(root_path).is_absolute():
             self.root_dir =  Path(root_path)
         else:
-            self.root_dir = Path.cwd().joinpath(root_path)
+            self.root_dir = Path(__file__).resolve().parent.joinpath(root_path)
         self.mean, self.std = self.normalization()
         self.image_size = image_size
         self.phase = phase
@@ -93,7 +93,7 @@ class MyOpsDataset(Dataset):
         for id in  self.series_id: #[0].values:
             selection = self.file_names[ self.file_names["mask"].str.contains(id) == True]
             file_names = file_names.append(selection)
-        self.file_names = file_names
+        return file_names
 
     def normalization(self):
         # Running Normalization of the dataset
@@ -202,9 +202,32 @@ class MyOpsDataset(Dataset):
 
 
 
+def extract_nrrd_data(PATH=r"/human-dataset", CLAHE = False):
+    # import nrrd
+    from glob import  iglob
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+    for p in iglob(PATH+str('/*de.nrrd')):
+        id = 126
+        dir_path =Path( str(p).split('_')[0])
+        # Create Directory
+        dir_path.mkdir(parents=True, exist_ok = True)
+        images = nrrd.read(p)[0]
+        for i in range(images.shape[-1]):
+            img = images[:,:,i]
+            img = (255 * (img- img.min()) / (img.max() - img.min())).astype(np.uint8)
+            if CLAHE:
+                img = clahe.apply(img)
+            img = Image.fromarray(img, mode="L")
+            img.save(dir_path.joinpath('myops_training_{0}_DE_{1}.png'.format(id, str(i).zfill(2))))
+            # cv2.imwrite( dir_path.joinpath('myops_training_{0}_DE_{1}.png'.format(id, str(i).zfill(2))) , img  )
+        id+=1
+
 if __name__ == "__main__":
-    dataset = MyOpsDataset("./input/images_masks_full.csv", "./input", series_id= "./input/series_ID.csv")
-    dataset.__getitem__(0)
+    from glob import  iglob
+    PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
+    extract_nrrd_data(PATH=PATH)
+    dataset = MyOpsDataset("./input/images_masks_full.csv", "./input", series_id= np.arange(101,110).astype(str))
+    sample = dataset.__getitem__(0)
     dataset.save_check_data()
-    params = {'batch_size': 64, 'shuffle': True, 'num_workers': 6}
+    params = {'batch_size': 16, 'shuffle': True, 'num_workers': 6}
     dataloader = DataLoader(dataset,**params)

@@ -41,20 +41,16 @@ class Trainer:
                  transform=False,
                  gaussian_noise=False,
                  model_name='unet_model_checkpoint.pt',
-                 model_dir = './weights/'  ,
-                 summary_name='./summary/',
-                 channel='channel_first'):
+                 model_dir = './weights/' ,
+                 summary_name='./summary/'):
 
-        assert channel is 'channel_first' or channel == 'channel_last', r"channel has to be 'channel_first' or ''channel_last"
-        assert Path(train_path).is_file(), r"The training file_paths is not found"
-        self.train_path = Path(train_path)
-        self.val_path =  validation_path if Path(validation_path).is_file() else self.train_path
-
+        self.train_path = Path(__file__).parent.joinpath(train_path)
+        assert  self.train_path .is_file(), r"The training file_paths is not found"
+        self.val_path = Path(__file__).parent.joinpath(validation_path) if Path(__file__).parent.joinpath(validation_path).is_file() else self.train_path
         self.WIDTH, self.HEIGHT = width, height
         self.BATCH_SIZE = batch_size
         self.noise = gaussian_noise
         self.epochs = n_epoch
-
         # Set the network parameters
         self.device = 'cuda' if gpu else 'cpu'
         self.net = model.to(self.device)
@@ -63,22 +59,21 @@ class Trainer:
         lr_scheduler = ReduceLROnPlateau(optimizer=self.optim, mode='max', factor=.1, patience=100, verbose=True)
         self.lr_scheduler =  lr_scheduler if  apply_scheduler else False
         self.model_name = model_name
-        self.channel = channel
         self.loss = loss.to(self.device)
         self.to_save_entire_model = False # with model structure
         self.file_to_save_summary = summary_name
         self.logs = 0
         # Set the datasets
-        self.train_dataset = MyOpsDataset(train_path, data_dir, transform =  transform,
+        self.train_dataset = MyOpsDataset(self.train_path, data_dir, transform =  transform,
                                           series_id=IDs.astype(str),
-                                          train_val_split= True,
+                                          split= True,
                                           phase = 'train',
                                           image_size = (self.WIDTH, self.HEIGHT),
                                           modality = 'T2')
         train_params = {'batch_size': batch_size, 'shuffle': True, 'num_workers': 4}
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
         self.val_dataloader = DataLoader(MyOpsDataset(self.val_path, data_dir,
-                                                      train_val_split= True,
+                                                      split= True,
                                                       series_id= valid_id.astype(str),
                                                       phase = 'valid',
                                                       image_size =  (self.WIDTH, self.HEIGHT),
@@ -261,7 +256,7 @@ if __name__ == '__main__':
         train_obj = Trainer( model,
                             train_path="./input/images_masks_full.csv",
                             data_dir = "./input/",
-                             IDs=train_id,
+                            IDs=train_id,
                             valid_id=valid_id,
                             width= 32,
                             height=32,
