@@ -62,7 +62,7 @@ class Trainer:
         self.to_save_entire_model = False # with model structure
         self.model_name = model_name
         self.model_dir = model_dir
-        self.logs = 20
+        self.logs = 25
         # Set the datasets
         self.train_dataset = MyOpsDataset(self.train_path, data_dir, transform =  transform,
                                           series_id=IDs.astype(str),
@@ -148,14 +148,14 @@ class Trainer:
         self.loss_logs['val_dice'].append( dice_loss.get_avg_loss())
         print('---------Average dice coeff: {0:.5f}--------- '.format( dice_loss.get_avg_loss() ))
 
-        return loss_meter.get_avg_loss()# ,  dice_loss.get_avg_loss()
+        return loss_meter.get_avg_loss(),  dice_loss.get_avg_loss()
 
 
 
     def train_model(self, train=True, model_name=''):
 
         # record train metrics in tensorboard
-        self.writer = SummaryWriter(  log_dir=Path(__file__).parent.absolute(), comment=self.model_dir)
+        self.writer = SummaryWriter(  log_dir= Path(__file__).parent.absolute()/'run_logs', comment=self.model_dir)
         self.loss_logs = { 'train_loss': [], 'train_dice' : [], 'val_loss': [], 'val_dice' : []}
 
         for epoch in range(self.epochs):
@@ -163,14 +163,14 @@ class Trainer:
             #########   TRAINING   ################
             epoch_loss = self.train_epoch(epoch)
             #########   VALIDATION   ################
-            val_loss_epoch = self.validation()
+            val_loss_epoch, dice_val= self.validation()
 
             # reduceLROnPlateau
             if self.lr_scheduler:
                 self.lr_scheduler.step(metrics= self.loss_logs['val_loss'][-1])
 
             # model check point
-            self.checkpoint.step(monitor=val_loss_epoch, model=self.net, epoch=epoch)
+            self.checkpoint.step(monitor=dice_val, model=self.net, epoch=epoch)
 
             # early stop
             self.earlystop.step(self.loss_logs['val_loss'][-1])
@@ -178,6 +178,7 @@ class Trainer:
                 break
 
         best_epoch = self.checkpoint.epoch
+
         print("Best model on epoch {}: train_dice {}, valid_dice {}".format(best_epoch,
                                                                             self.loss_logs['train_loss'][best_epoch],
                                                                             self.loss_logs['val_dice'][best_epoch]))
@@ -190,7 +191,6 @@ class Trainer:
             self.writer.add_scalar('Loss/Validation', v_loss, i)
             i += 1
         self.writer.close()
-        print("Finish training")
 
 
 if __name__ == '__main__':
@@ -198,7 +198,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.0001)
     parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=300)
-    parser.add_argument("-da", "--augmentation", help="whether to apply gaussian noise", action="store_true",
+    parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation", action="store_true",
                         default=True)
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default=True)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=100)
@@ -254,9 +254,10 @@ if __name__ == '__main__':
                             )
 
         # Train the models
-        print(" Training fold ", i)
+        print("********** Training fold ", i, " ***************")
         start = datetime.now()
         torch.autograd.set_detect_anomaly(True)
         train_obj.train_model(model_name=comments)
         end = datetime.now()
         print("time elapsed for training (hh:mm:ss.ms) {}".format(end - start))
+        print("********** Training fold ", i, " ***************")

@@ -7,39 +7,7 @@ def to_categorical(y, num_classes):
     return np.eye(num_classes, dtype='uint8')[y]
 
 
-def dice_coef(y_true, y_pred):
-    """
-    :param y_true:
-    :param y_pred:
-    :return:
-    """
-    y_true = y_true.flatten()
-    y_pred = y_pred.flatten()
-    intersection = np.sum(y_true * y_pred)
-    return (2. * intersection + 1.0) / (np.sum(y_true) + np.sum(y_pred) + 1.0)
-
-# def dice_coef_multilabel(y_true, y_pred, numLabels=4, channel='channel_first'):
-#     """
-#     :param y_true:
-#     :param y_pred:
-#     :param numLabels:
-#     :return:
-#     """
-#     assert channel=='channel_first' or channel=='channel_last', r"channel has to be either 'channel_first' or 'channel_last'"
-#     dice = 0
-#     if channel == 'channel_first':
-#         y_true = np.moveaxis(y_true, 1, -1)
-#         y_pred = np.moveaxis(y_pred, 1, -1)
-#
-#     for index in range(1, numLabels):
-#         temp = dice_coef(y_true[:, :, :, index], y_pred[:, :, :, index])
-#         dice += temp
-#
-#     dice = dice / (numLabels - 1)
-#     return dice
-#
-
-def dice_coefficient(y_true, y_pred):
+def dice_coefficient_numpy(y_true, y_pred):
     """
     :param y_true:
     :param y_pred:
@@ -54,11 +22,9 @@ def dice_coefficient(y_true, y_pred):
 def dice_coefficient_multiclass( y_pred, y_true, numLabels=6):
     dice_metric = 0
     for c in range(1, numLabels):
-        dice_metric += DiceCoefMultilabelLoss.dice_coeff(y_true[:, c, :, :], y_pred[:, c, :, :])
+        dice_metric += DiceCoefMultilabelLoss.dice_coeff( predict = y_pred[:, c, :, :], target= y_true[:, c, :, :])
     dice_metric /= (numLabels - 1)
     return dice_metric
-
-
 
 def hausdorff_multilabel(y_true, y_pred, numLabels=4, channel='channel_first'):
     """
