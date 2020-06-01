@@ -31,11 +31,13 @@ class EarlyStoppingCallback:
 
 class ModelCheckPointCallback:
 
-    def    __init__(self, mode="min", model_path= "../weights/", model_name ="model_checkpoint.pth.tar",  entire_model=False):
+    def   __init__(self, mode="min", model_path= "../weights/", model_name ="model_checkpoint.pth.tar",  entire_model=False):
         assert mode=="max" or mode=="min", "mode can only be /'min/' or /'max/'"
         self.mode = mode
         self.best_result = np.Inf if mode=='min' else np.NINF
-        self.model_path =  make_directory( model_path, model_name)
+        # print("The checkpoints will be saved in the folder: ", model_path)
+        self.model_path =  make_directory( model_path)
+        self.model_name = model_name
         self.entire_model = entire_model
         self.epoch = 0
 
@@ -54,5 +56,5 @@ class ModelCheckPointCallback:
                 to_save = model
             else:
                 to_save = model.state_dict()
-            save(to_save, self.model_path)
+            save(to_save, self.model_path/self.model_name)
 

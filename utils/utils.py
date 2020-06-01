@@ -44,6 +44,10 @@ def simplex(t: Tensor, axis=1) -> bool:
 def one_hot(t: Tensor, axis=1) -> bool:
     return simplex(t, axis) and sset(t, [0, 1])
 
+def one_hot_mask(y, channel_axis=1):
+    "Returns binary mask from channelwise maxima"
+    max_value = torch.max(y, dim =channel_axis, keepdim=True)[0]
+    return torch.where(y == max_value, torch.ones_like(y), torch.zeros_like(y))
 
 
 # switch between representations
@@ -104,17 +108,6 @@ def to_categorical(mask, num_classes, channel='channel_first'):
     unique = np.unique(mask)
     assert len(unique) <= num_classes, "number of unique values should be smaller or equal to the num_classes"
     assert np.max(unique) < num_classes, "maximum value in the mask should be smaller than the num_classes"
-    # shape = mask.shape
-    #     # h = shape[1]
-    #     # w = shape[2]
-    #     # if channel == 'channel_first':
-    #     #     output = np.zeros((shape[0], num_classes, h, w))
-    #     #     for i in range(num_classes):
-    #     #         output[:,i] = mask == i
-    #     # else:
-    #     #     output = np.zeros((shape[0], h, w, num_classes))
-    #     #     for i in range(num_classes):
-    #     #         output[...,i] = mask == i
     if mask.shape[1] == 1:
         mask = np.squeeze(mask, axis=1)
     if mask.shape[-1] == 1:
@@ -128,10 +121,6 @@ def to_categorical(mask, num_classes, channel='channel_first'):
 def soft_to_hard_pred(pred, channel_axis=1):
     max_value = np.max(pred, axis=channel_axis, keepdims=True)
     return np.where(pred==max_value, 1, 0)
-
-def hard_predicton(pred_tensor, channel =1):
-    max = pred_tensor.max(dim =channel, keepdim = True)
-    return torch.where(pred_tensor == max, 1., 0.)
 
 
 def read_tf(tfrecord_path):

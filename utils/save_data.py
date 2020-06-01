@@ -17,7 +17,7 @@ def load_data(path):
 
 def make_directory(path, dir_name=""):
     dir_path = Path(path).joinpath(dir_name)
-    dir_path.mkdir(parents=True, exist_ok=True)
+    dir_path.mkdir(exist_ok=True)     # dir_path.mkdir(parents=True, exist_ok=True)
     return dir_path
 
 def remove_files(directory='../weights/*'):
@@ -51,7 +51,7 @@ def png_to_gif(path, save_filename, fps=4):
 
 
 def html(dir_path, filename_pattern, ext='.png', title='dataset_vis'):
-    htmlfile = open(Path(dir_path).joinpath(title + '.html') , "w")
+    htmlfile = open(Path(dir_path).joinpath(title + '.html') , "weights")
     htmlfile.write("<html>\n")
     htmlfile.write("<head>\n")
     htmlfile.write("\t<title>" + str(title) + "</title>\n")

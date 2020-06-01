@@ -19,8 +19,6 @@ def get_greens():
 
 
 
-
-
 def histogram_matching(image = '../../input/processed/trainA/pat_30_bSSFP_7.png', reference_img ='../../input/processed/trainB/pat_12_lge_8.png'):
     image = cv2.imread(image)
     reference_img = cv2.imread(reference_img)
