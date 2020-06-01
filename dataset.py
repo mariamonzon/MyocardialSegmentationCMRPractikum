@@ -2,7 +2,7 @@
 @Author: Sulaiman Vesal, Maria Monzon
 """
 
-import numpy as np
+import torch
 import pandas as pd
 # from skimage.exposure import match_histograms
 from utils.image_proces_vis import *
@@ -34,7 +34,7 @@ from albumentations import (
     OneOf,
     Compose,
 )
-from albumentations.pytorch.transforms import ToTensorV2, ToTensor
+from albumentations.pytorch.transforms import ToTensor
 from utils.save_data import html, make_directory
 from torch.utils.data import Dataset, ConcatDataset, DataLoader
 from PIL import Image
@@ -68,6 +68,7 @@ class MyOpsDataset(Dataset):
         self.mean, self.std = self.normalization()
         self.image_size = image_size
         self.phase = phase
+        self.num_classes = 6
         self.data_augmentation = self.set_augmentation( 0.5, image_size, data_augmentation = transform,  rotation= True, crop = True, clahe=True, noise=True, blur = True )
 
 
@@ -75,22 +76,20 @@ class MyOpsDataset(Dataset):
         return len(self.file_names)
 
     def __getitem__(self, idx):
-        # mask  = self.file_names['img'].iloc[idx]['mask']
-        # TODO: change to cv2
         image = self.load_image(idx)
         # image = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx]['img_'+self.modality[0]], mode='RGB' ))
         mask = np.array(self.PIL_loader(self.root_dir, 'masks/'+ self.file_names.iloc[idx]['mask']) )
         if self.data_augmentation:
             sample = Compose( self.data_augmentation)(image=image, mask=mask)
+        sample['mask'] = self.categorical_maks( sample['mask'] )
         return sample
 
     def __add__(self, other):
         return ConcatDataset([self, other])
 
-    def split_idx(self): #TODO: find more efficient choose series
-        # file_names = self.file_names.iloc[0]
+    def split_idx(self): #TODO: find more efficient implementation
         file_names = pd.DataFrame(columns=self.file_names.columns)
-        for id in  self.series_id: #[0].values:
+        for id in  self.series_id:
             selection = self.file_names[ self.file_names["mask"].str.contains(id) == True]
             file_names = file_names.append(selection)
         return file_names
@@ -99,14 +98,16 @@ class MyOpsDataset(Dataset):
         # Running Normalization of the dataset
         running_mean = 0
         running_std= 0
-        for p in  self.file_names['img_'+ self.modality[0] ]:
-            images = np.array(self.PIL_loader( self.root_dir , 'train/'+ p ) )
-            mean, std = images.mean(), images.std()
-            running_mean += mean.item()
-            running_std += std.item()
-        mean = running_mean / self.__len__()
-        std   = running_std / self.__len__()
-        print("The mean of the dataset is {0:.2f} and the standard deviation {1:.2f}".format(mean, std ))
+        for m in range(len(self.modality)):
+            k = self.file_names.columns[0]
+            for p in  self.file_names[k]:
+                images = np.array(self.PIL_loader( self.root_dir , 'train/'+ p ) )
+                mean, std = images.mean(), images.std()
+                running_mean += mean.item()
+                running_std += std.item()
+        mean = running_mean / (len(self.modality)*self.__len__() )
+        std   = running_std / (len(self.modality)*self.__len__() )
+        # print("The mean of the dataset is {0:.2f} and the standard deviation {1:.2f}".format(mean, std ))
         self.mean = mean
         self.std = std
         return  mean, std
@@ -142,11 +143,22 @@ class MyOpsDataset(Dataset):
                 return img.convert( mode )
 
     def load_image(self,idx ):
-        image = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx]['img_'+self.modality[0]], mode='RGB'))
+        key = self.file_names.columns[0]
+        image = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx][key], mode='RGB'))
         if len(self.modality)>1:
+            # key = self.file_names.columns[0]
             for i, m in enumerate(self.modality):
-                image[:,:,i] = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx]['img_'+ m ], mode='L'))
+                key = self.file_names.columns[i]        # key ='img_' + m
+                image[:,:, i] = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx][ key ], mode='L'))
         return image
+
+    def categorical_maks(self, mask):
+        """Converts a class vector to binary class matrix."""
+        num_classes =  self.num_classes# len(torch.unique(mask, sorted=True)) #  np.unique(mask )
+        channel_mask = torch.zeros((num_classes,) + mask.shape)
+        for n, c in enumerate(torch.unique(mask, sorted=True)):
+            channel_mask[n] = 1*(mask == c)
+        return channel_mask
 
     @staticmethod
     def image_loader(path, filename):
@@ -167,7 +179,7 @@ class MyOpsDataset(Dataset):
 
         if data_augmentation and self.phase is 'train':
             if rotation:
-                augmentation += OneOf([  Rotate(limit=45,interpolation=cv2.INTER_LANCZOS4 ),
+                augmentation += OneOf([  Rotate(limit=45, interpolation=cv2.INTER_LANCZOS4 ),
                                          VerticalFlip(),
                                          HorizontalFlip(),
                                          RandomRotate90(),
@@ -196,8 +208,8 @@ class MyOpsDataset(Dataset):
                                         ], p=prob)
 
         augmentation += [Resize(image_size[0], image_size[1], cv2.INTER_LANCZOS4),
-                         Normalize(mean=(self.mean), std=(self.std), max_pixel_value=255.0, always_apply=True, p=1.0),
-                        ToTensor(num_classes=4)]
+                         # Normalize(mean=(self.mean), std=(self.std), max_pixel_value=255.0, always_apply=True, p=1.0),
+                         ToTensor(num_classes=self.num_classes-1)]
         return augmentation
 
 
@@ -219,13 +231,12 @@ def extract_nrrd_data(PATH=r"/human-dataset", CLAHE = False):
                 img = clahe.apply(img)
             img = Image.fromarray(img, mode="L")
             img.save(dir_path.joinpath('myops_training_{0}_DE_{1}.png'.format(id, str(i).zfill(2))))
-            # cv2.imwrite( dir_path.joinpath('myops_training_{0}_DE_{1}.png'.format(id, str(i).zfill(2))) , img  )
         id+=1
 
 if __name__ == "__main__":
     from glob import  iglob
-    PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
-    extract_nrrd_data(PATH=PATH)
+    # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
+    # extract_nrrd_data(PATH=PATH)
     dataset = MyOpsDataset("./input/images_masks_full.csv", "./input", series_id= np.arange(101,110).astype(str))
     sample = dataset.__getitem__(0)
     dataset.save_check_data()
