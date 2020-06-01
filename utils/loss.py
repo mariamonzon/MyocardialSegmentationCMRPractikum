@@ -29,27 +29,26 @@ class LossMeter:
 
 class DiceCoefMultilabelLoss(nn.Module):
 
-    def __init__(self, numLabels=4 ):
+    def __init__(self, numLabels=6 ):
         super().__init__( )
         self.activation = torch.nn.Softmax2d()
         self.numLabels = numLabels
 
     def forward(self, predict, target):
-        dice = 0
+        dice_loss = 0
         predict = self.activation(predict)
 
         for c in range(self.numLabels):
-            # Lme = [0.1, 0.1, 0.3, 0.5]
-            dice += self.dice_coeff(predict[:, c, :, :], target[:, c, :, :])
-        dice = dice /self.numLabels
+            dice_loss += (1-self.dice_coeff(predict[:, c, :, :], target[:, c, :, :]))
+        dice_loss = dice_loss /self.numLabels
 
-        return dice
+        return  dice_loss
 
     @staticmethod
     def dice_coeff(predict, target, smooth=1.):
         intersection = predict.contiguous().view(-1) *  target.contiguous().view(-1)
-        score = (intersection.sum() * 2. + smooth) / (predict.sum() + target.sum()  + smooth)
-        return 1. - score
+        score = (2.*intersection.sum() + smooth) / (predict.sum() + target.sum()  + smooth)
+        return  score
         # intersection = einsum("bcwh,bcwh->bc", predict, target)
         # union = (einsum("bcwh->bc", predict) + einsum("bcwh->bc", target))
         # loss =  1 - (2 * intersection + 1e-10) / (union + 1e-10)
@@ -94,7 +93,7 @@ class BoundaryLoss(nn.Module):
             - pred: the output from model (before softmax)
                     shape (N, C, H, W)
             - gt: ground truth map
-                    shape (N, H, w)
+                    shape (N, H, weights)
         Return:
             - boundary loss, averaged over mini-bathc
         """
@@ -151,8 +150,8 @@ class CrossEntropy2d(nn.Module):
     def forward(self, predict, target, weight=None):
         """
             Args:
-                predict:(n, c, h, w)
-                target:(n, h, w)
+                predict:(n, c, h, weights)
+                target:(n, h, weights)
                 weight (Tensor, optional): a manual rescaling weight given to each class.
                                            If given, has to be a Tensor of size "nclasses"
         """
