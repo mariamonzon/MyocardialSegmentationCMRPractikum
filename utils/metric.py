@@ -8,15 +8,20 @@ def to_categorical(y, num_classes):
 
 
 def dice_coefficient_numpy(y_true, y_pred):
-    """
-    :param y_true:
-    :param y_pred:
-    :return:
-    """
     y_true = y_true.flatten()
     y_pred = y_pred.flatten()
     intersection = np.sum(y_true * y_pred)
     return (2. * intersection + 1.0) / (np.sum(y_true) + np.sum(y_pred) + 1.0)
+
+
+def dice(pred, targs):
+    pred = (pred>0).float()
+    return 2.0 * (pred*targs).sum() / ((pred+targs).sum() + 1.0)
+
+def IoU(pred, targs):
+    pred = (pred>0).float()
+    intersection = (pred*targs).sum()
+    return intersection / ((pred+targs).sum() - intersection + 1.0)
 
 
 def dice_coefficient_multiclass( y_pred, y_true, numLabels=6):

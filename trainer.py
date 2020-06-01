@@ -104,11 +104,11 @@ class Trainer:
         for iter, data in enumerate(self.train_dataloader):
             image , mask = data['image'].to(self.device), data['mask'].to(self.device)
             self.optim.zero_grad()
-            segmentation, btnck = self.net(image, features_out=True)
-            loss =  self.loss(segmentation , mask)
+            output = self.net(image, features_out=False)
+            loss =  self.loss(output , mask)
             loss.backward()
             self.optim.step()
-            loss_meter.update(loss.item(), segmentation.size(0) )
+            loss_meter.update(loss.item(), output.size(0) )
 
             # Compute Hard Dice Loss
             # y_pred = hard_predicton(segmentation, channel = 1)
@@ -117,7 +117,7 @@ class Trainer:
 
             if iter % self.logs == 0:
                 print('Epoch: [{0}][{1}/{2}]\t' 'Loss {loss:.4f} '.format(epoch, iter, len(self.train_dataloader), loss=loss.item() ))
-
+            del image, mask,output
         train_loss = loss_meter.get_avg_loss()
         self.loss_logs['train_loss'].append( loss_meter.get_avg_loss())
         print('--------- Average train_loss: {0:.5f} ------------'.format(train_loss))
@@ -141,15 +141,13 @@ class Trainer:
                 y_pred = one_hot_mask(output, channel_axis=1)
                 l = dice_coefficient_multiclass(mask, y_pred, numLabels=6).item()
                 dice_loss.update(l, output.size(0))
-
+            del image, mask, output, y_pred
         train_loss = loss_meter.get_avg_loss()
         self.loss_logs['val_loss'].append( loss_meter.get_avg_loss())
         print('---------Average val_loss: {0:.5f}--------- '.format(train_loss))
         self.loss_logs['val_dice'].append( dice_loss.get_avg_loss())
         print('---------Average dice coeff: {0:.5f}--------- '.format( dice_loss.get_avg_loss() ))
-
         return loss_meter.get_avg_loss(),  dice_loss.get_avg_loss()
-
 
 
     def train_model(self, train=True, model_name=''):
@@ -217,6 +215,7 @@ if __name__ == '__main__':
     IDS = np.arange(101,126)
     MODALITY =  ['CO', 'DE', 'T2']
     for i in range(CV):
+        torch.cuda.empty_cache()
         valid_id = IDS[5*i:5*(i+1)]
         train_id = IDS[~np.in1d( IDS, valid_id)]
         print("The Train IDs are ", train_id)
@@ -252,6 +251,8 @@ if __name__ == '__main__':
                             model_name= 'unet_model_checkpoint.pth.tar',
                             model_dir = './weights/{}/'.format(comments)
                             )
+        # if i == 0:
+        #     Trainer.find_learning_rate()
 
         # Train the models
         print("********** Training fold ", i, " ***************")
@@ -260,4 +261,6 @@ if __name__ == '__main__':
         train_obj.train_model(model_name=comments)
         end = datetime.now()
         print("time elapsed for training (hh:mm:ss.ms) {}".format(end - start))
+        del model, train_obj
+
         print("********** Training fold ", i, " ***************")
