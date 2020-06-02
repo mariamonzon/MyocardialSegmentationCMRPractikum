@@ -138,7 +138,7 @@ class Segmentation_model(nn.Module):
             print('model plotted')
 
 if __name__ == '__main__':
-    model = Segmentation_model(filters=32, n_block=4)
+    model = Segmentation_model(filters=64, n_block=4)
     x = rand(2, 3, 224, 224)
     output = model(x)
     model.plot_model(model,x)
