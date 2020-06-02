@@ -225,10 +225,75 @@ class TverskyLoss(nn.Module):
         return Ncl - T
 
 
-        def focal_tversky(self, y_true, y_pred):
-            pt_1 = self.forward(self, y_pred, y_true, weight=None)
-            gamma = 0.75
-            return torch.pow((1 - pt_1), gamma)
+    def focal_tversky(self, y_true, y_pred):
+        pt_1 = self.forward(self, y_pred, y_true, weight=None)
+        gamma = 0.75
+        return torch.pow((1 - pt_1), gamma)
+
+class GeneralizedDice():
+    def __init__(self, **kwargs):
+        # Self.idc is used to filter out some classes of the target mask. Use fancy indexing
+        self.n_classes = kwargs.get("n_classes", 6)
+        self.idc = kwargs.get("idc", range(1, self.n_classes))
+        print(f"Initialized {self.__class__.__name__} with {kwargs}")
+
+    def __call__(self, probs: Tensor, target: Tensor, _: Tensor) -> Tensor:
+
+        pc = probs[:, self.idc, ...].type(torch.float32)
+        tc = target[:, self.idc, ...].type(torch.float32)
+
+        w: Tensor = 1 / ((einsum("bcwh->bc", tc).type(torch.float32) + 1e-10) ** 2)
+        intersection: Tensor = w * einsum("bcwh,bcwh->bc", pc, tc)
+        union: Tensor = w * (einsum("bcwh->bc", pc) + einsum("bcwh->bc", tc))
+
+        divided: Tensor = 1 - 2 * (einsum("bc->b", intersection) + 1e-10) / (einsum("bc->b", union) + 1e-10)
+
+        loss = divided.mean()
+
+        return loss
+
+
+class DiceLoss():
+    def __init__(self, **kwargs):
+        # Self.idc: List[int]  is used to filter out some classes of the target mask. Use fancy indexing
+        self.n_classes = kwargs.get("n_classes", 6)
+        self.idc = kwargs.get("idc", range(1, self.n_classes))
+        print(f"Initialized {self.__class__.__name__} with {kwargs}")
+
+    def __call__(self, probs: Tensor, target: Tensor, _: Tensor) -> Tensor:
+
+        pc = probs[:, self.idc, ...].type(torch.float32)
+        tc = target[:, self.idc, ...].type(torch.float32)
+
+        intersection: Tensor = einsum("bcwh,bcwh->bc", pc, tc)
+        union: Tensor = (einsum("bcwh->bc", pc) + einsum("bcwh->bc", tc))
+
+        divided: Tensor = 1 - (2 * intersection + 1e-10) / (union + 1e-10)
+
+        loss = divided.mean()
+
+        return loss
+
+
+class SurfaceLoss(nn.Module):
+    def __init__(self, **kwargs):
+
+        super(SurfaceLoss, self).__init__()
+        self.n_classes =  kwargs.get("n_classes", 6)
+        # Self.idc:List[int] is used to filter out some classes of the target mask.
+        self.idc= kwargs.get("idc", range(self.n_classes))
+        print(f"Initialized {self.__class__.__name__} with {kwargs}")
+
+    def forward(self, probs: Tensor, dist_maps: Tensor) -> Tensor:
+
+        pc = probs[:, self.idc, ...].type(torch.float32)
+        dc = dist_maps[:, self.idc, ...].type(torch.float32)
+
+        multipled = einsum("bcwh,bcwh->bcwh", pc, dc)
+
+        loss = multipled.mean()
+
+        return loss
 
 
 
@@ -237,11 +302,10 @@ class GeneralizedDiceLoss(nn.Module):
     """Computes Generalized Dice Loss (GDL) as described in https://arxiv.org/pdf/1707.03237.pdf.
     """
 
-    def __init__(self, classes=4, sigmoid_normalization=True, skip_index_after=None, epsilon=1e-6,):
+    def __init__(self, classes=6, sigmoid_normalization=True, skip_index_after=None, epsilon=1e-6,):
         super().__init__(weight=None, sigmoid_normalization=sigmoid_normalization)
         self.classes = None
         self.skip_index_after = None
-        #~        self.register_buffer('weight', weight)
         self.epsilon = epsilon
         self.classes = classes
         if skip_index_after is not None:
@@ -250,6 +314,7 @@ class GeneralizedDiceLoss(nn.Module):
             self.normalization = nn.Sigmoid()
         else:
             self.normalization = nn.Softmax(dim=1)
+
 
     @staticmethod
     def expand_as_one_hot(input, C, ignore_index=None):
