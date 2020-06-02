@@ -33,7 +33,7 @@ class Trainer:
                  width=256,
                  height=256,  #image size
                  batch_size=4,
-                 n_epoch=100,
+                 n_epoch=200,
                  gpu = True,
                  loss = DiceCoefMultilabelLoss(numLabels=6),
                  lr= 0.001,
@@ -41,7 +41,8 @@ class Trainer:
                  transform=False,
                  augmentation=False,
                  model_name='unet_model_checkpoint.pth.tar',
-                 model_dir = '/weights/'):
+                 model_dir = '/weights/',
+                 modality = ['CO', 'DE', 'T2']):
 
         self.train_path = Path(__file__).parent.joinpath(train_path)
         assert  self.train_path .is_file(), r"The training file_paths is not found"
@@ -77,7 +78,7 @@ class Trainer:
                                                       series_id= valid_id.astype(str),
                                                       phase = 'valid',
                                                       image_size =  (self.WIDTH, self.HEIGHT),
-                                                      modality = ['CO', 'DE', 'T2']),
+                                                      modality = modality),
                                          batch_size=1, shuffle= False)
 
         self.earlystop = EarlyStoppingCallback(patience=15, mode="min")
@@ -118,9 +119,10 @@ class Trainer:
             if iter % self.logs == 0:
                 print('Epoch: [{0}][{1}/{2}]\t' 'Loss {loss:.4f} '.format(epoch, iter, len(self.train_dataloader), loss=loss.item() ))
             del image, mask,output
+            torch.cuda.empty_cache()
         train_loss = loss_meter.get_avg_loss()
         self.loss_logs['train_loss'].append( loss_meter.get_avg_loss())
-        print('--------- Average train_loss: {0:.5f} ------------'.format(train_loss))
+        print('Average train_loss epoch [{0}]: {1:.5f} ------------'.format(epoch, train_loss))
         # self.loss_logs['train_dice'].append( dice_loss.get_avg_loss())
         # print('Average train_dice: {  dice_loss:.5f} '.format(dice_loss=self.loss_logs['train_dice'][-1]))
 
@@ -142,11 +144,11 @@ class Trainer:
                 l = dice_coefficient_multiclass(mask, y_pred, numLabels=6).item()
                 dice_loss.update(l, output.size(0))
             del image, mask, output, y_pred
+            torch.cuda.empty_cache()
         train_loss = loss_meter.get_avg_loss()
         self.loss_logs['val_loss'].append( loss_meter.get_avg_loss())
-        print('---------Average val_loss: {0:.5f}--------- '.format(train_loss))
         self.loss_logs['val_dice'].append( dice_loss.get_avg_loss())
-        print('---------Average dice coeff: {0:.5f}--------- '.format( dice_loss.get_avg_loss() ))
+        print('Average val_loss:  {0:.5f} ........ Average dice coeff:  {1:.5f} \n'.format( train_loss, dice_loss.get_avg_loss() ))
         return loss_meter.get_avg_loss(),  dice_loss.get_avg_loss()
 
 
@@ -200,7 +202,7 @@ if __name__ == '__main__':
                         default=True)
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default=True)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=100)
-    parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
+    parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=2)
     parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=6)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
     parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=4)
@@ -215,23 +217,23 @@ if __name__ == '__main__':
     IDS = np.arange(101,126)
     MODALITY =  ['CO', 'DE', 'T2']
     for i in range(CV):
-        torch.cuda.empty_cache()
         valid_id = IDS[5*i:5*(i+1)]
         train_id = IDS[~np.in1d( IDS, valid_id)]
-        print("The Train IDs are ", train_id)
 
         # calculate the comments
         comments = "segmentation_unet_lr_{}_{}".format( args.lr, args.n_filter)
         if args.augmentation:
             comments += "_augmentation"
+        comments = comments + '_' + '_'.join(MODALITY)
         comments += "_fold_{}".format(i)
         print(comments)
-
+        torch.cuda.empty_cache()
         model = Segmentation_model(filters=args.n_filter,
                                         in_channels=3,
                                         n_block=args.n_block,
                                         bottleneck_depth=4,
-                                        n_class=args.n_class)
+                                        n_class=args.n_class
+                                   )
 
         if args.pretrained:
             model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pt'.format(comments)))
@@ -241,9 +243,9 @@ if __name__ == '__main__':
                             data_dir = "./input/",
                             IDs=train_id,
                             valid_id=valid_id,
-                            width= 32,
-                            height=32,
-                            batch_size=args.batch_size,  # 8
+                            width=  256,
+                            height= 256,
+                            batch_size= args.batch_size,  # 8
                             loss=DiceCoefMultilabelLoss(numLabels=args.n_class),
                             augmentation=args.augmentation,
                             lr=args.lr,
@@ -253,7 +255,7 @@ if __name__ == '__main__':
                             )
         # if i == 0:
         #     Trainer.find_learning_rate()
-
+        print("The validation IDs are ", valid_id)
         # Train the models
         print("********** Training fold ", i, " ***************")
         start = datetime.now()
@@ -262,5 +264,5 @@ if __name__ == '__main__':
         end = datetime.now()
         print("time elapsed for training (hh:mm:ss.ms) {}".format(end - start))
         del model, train_obj
-
-        print("********** Training fold ", i, " ***************")
+        torch.cuda.empty_cache()
+    exit(0)

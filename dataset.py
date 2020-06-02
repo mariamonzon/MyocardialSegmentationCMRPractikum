@@ -41,6 +41,7 @@ from PIL import Image
 from pathlib import Path
 
 class MyOpsDataset(Dataset):
+    MODALITIES = {'CO': 0, 'DE': 1, 'T2': 2}
     def __init__(self, csv_path, root_path, transform = False, series_id = "", split = True, phase ='train', image_size = (256, 256), modality = ['CO', 'DE', 'T2']):
         """
             csv_path (string): path to csv file
@@ -57,7 +58,7 @@ class MyOpsDataset(Dataset):
         self.file_names = pd.read_csv(csv_path, delimiter=';')
         # if Path( series_id ).is_file():
         #     self.series_id = pd.read_csv( series_id , delimiter=';')
-        self.modality = modality if isinstance(modality, list) else [modality]
+        self.modality =  self.set_modality( modality)#modality if isinstance(modality, list) else [modality]
         if split and series_id is not "":
             self.series_id = list(series_id)
             self.file_names = self.split_idx()
@@ -112,6 +113,12 @@ class MyOpsDataset(Dataset):
         self.std = std
         return  mean, std
 
+    def set_modality(self, modality):
+        mod = []
+        for m in modality:
+            mod.append(int(self.MODALITIES[m]))
+        return mod
+
     def save_check_data(self, **kwargs):
         """ For debugging purposes """
         result_dir = kwargs.get('result_dir', self.root_dir )
@@ -143,12 +150,12 @@ class MyOpsDataset(Dataset):
                 return img.convert( mode )
 
     def load_image(self,idx ):
-        key = self.file_names.columns[0]
+        key = self.file_names.columns[self.modality[0]]
         image = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx][key], mode='RGB'))
         if len(self.modality)>1:
             # key = self.file_names.columns[0]
             for i, m in enumerate(self.modality):
-                key = self.file_names.columns[i]        # key ='img_' + m
+                key = self.file_names.columns[m]        # key ='img_' + m
                 image[:,:, i] = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx][ key ], mode='L'))
         return image
 
@@ -237,7 +244,7 @@ if __name__ == "__main__":
     from glob import  iglob
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
-    dataset = MyOpsDataset("./input/images_masks_full.csv", "./input", series_id= np.arange(101,110).astype(str))
+    dataset = MyOpsDataset("./input/images_masks_full.csv", "./input", series_id= np.arange(101,110).astype(str), modality = ['T2', 'DE'])
     sample = dataset.__getitem__(0)
     dataset.save_check_data()
     params = {'batch_size': 16, 'shuffle': True, 'num_workers': 6}
