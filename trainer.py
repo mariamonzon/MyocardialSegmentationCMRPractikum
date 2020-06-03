@@ -64,13 +64,17 @@ class Trainer:
         self.model_name = model_name
         self.model_dir = model_dir
         self.logs = 25
+        # record train metrics in tensorboard and save in folder /run_logs
+        self.writer = SummaryWriter(  log_dir= Path(__file__).parent.absolute()/'run_logs', comment=self.model_dir)
+        self.loss_logs = { 'train_loss': [], 'train_dice' : [], 'val_loss': [], 'val_dice' : []}
+
         # Set the datasets
         self.train_dataset = MyOpsDataset(self.train_path, data_dir, transform =  transform,
                                           series_id=IDs.astype(str),
                                           split= True,
                                           phase = 'train',
                                           image_size = (self.WIDTH, self.HEIGHT),
-                                          modality = 'T2')
+                                          modality = modality )
         train_params = {'batch_size': batch_size, 'shuffle': True} #, 'num_workers': 4}
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
         self.val_dataloader = DataLoader(MyOpsDataset(self.val_path, data_dir,
@@ -81,11 +85,15 @@ class Trainer:
                                                       modality = modality),
                                          batch_size=1, shuffle= False)
 
+        # Early stop with regards to the validation multi dice Coefficient LOSS
         self.earlystop = EarlyStoppingCallback(patience=15, mode="min")
-        self.checkpoint = ModelCheckPointCallback(mode="min",
+
+        # Early stop with regards to the validation Dice coeffficient
+        self.checkpoint = ModelCheckPointCallback(mode="max",
                                                   model_path=  Path(__file__).parent.absolute() / self.model_dir,
                                                   model_name = self.model_name,
                                                   entire_model=self.to_save_entire_model)
+
 
     def find_learning_rate(self):
         r""" Function that enables a pretraining for determining the LR
@@ -106,25 +114,18 @@ class Trainer:
             image , mask = data['image'].to(self.device), data['mask'].to(self.device)
             self.optim.zero_grad()
             output = self.net(image, features_out=False)
-            loss =  self.loss(output , mask)
+            output_probs = nn.Softmax2d()(output)
+            loss = self.loss(output_probs, mask)   # loss =  self.loss(output , mask)
             loss.backward()
             self.optim.step()
             loss_meter.update(loss.item(), output.size(0) )
-
-            # Compute Hard Dice Loss
-            # y_pred = hard_predicton(segmentation, channel = 1)
-            # l =  dice_coefficient_multiclass(mask, y_pred, numLabels=4).item()
-            # dice_loss.update(l.item(), segmentation.size(0))
-
-            if iter % self.logs == 0:
-                print('Epoch: [{0}][{1}/{2}]\t' 'Loss {loss:.4f} '.format(epoch, iter, len(self.train_dataloader), loss=loss.item() ))
+            if iter % self.logs == 0: # Print logs
+                print('Epoch [{0}][{1}/{2}]:\t' 'Loss {loss:.4f} '.format(epoch, iter, len(self.train_dataloader), loss=loss.item() ))
             del image, mask,output
             torch.cuda.empty_cache()
         train_loss = loss_meter.get_avg_loss()
         self.loss_logs['train_loss'].append( loss_meter.get_avg_loss())
-        print('Average train_loss epoch [{0}]: {1:.5f} ------------'.format(epoch, train_loss))
-        # self.loss_logs['train_dice'].append( dice_loss.get_avg_loss())
-        # print('Average train_dice: {  dice_loss:.5f} '.format(dice_loss=self.loss_logs['train_dice'][-1]))
+        print('Epoch: [{0}]\t' 'Mean train Loss: {1:.5f}'.format(epoch, train_loss))
 
         return train_loss
 
@@ -134,29 +135,26 @@ class Trainer:
         loss_meter = LossMeter()
         dice_loss =  LossMeter()
         with torch.no_grad():
-            for data in self.train_dataloader:
+            for data in self.val_dataloader:
                 image = data['image'].to(self.device)  # Input images
                 mask =  data['mask'].to(self.device)
                 output = self.net(image, features_out=False)
-                loss = self.loss(output, mask)
+                output_probs = nn.Softmax2d()(output)
+                loss = self.loss(output_probs, mask)
                 loss_meter.update(loss.item())
-                y_pred = one_hot_mask(output, channel_axis=1)
-                l = dice_coefficient_multiclass(mask, y_pred, numLabels=6).item()
+                output_mask = one_hot_mask(output_probs, channel_axis=1)
+                l = dice_coefficient_multiclass(mask, output_mask, numLabels=6).item()
                 dice_loss.update(l, output.size(0))
-            del image, mask, output, y_pred
+            del image, mask, output, output_mask
             torch.cuda.empty_cache()
-        train_loss = loss_meter.get_avg_loss()
+        val_loss = loss_meter.get_avg_loss()
         self.loss_logs['val_loss'].append( loss_meter.get_avg_loss())
         self.loss_logs['val_dice'].append( dice_loss.get_avg_loss())
-        print('Average val_loss:  {0:.5f} ........ Average dice coeff:  {1:.5f} \n'.format( train_loss, dice_loss.get_avg_loss() ))
+        print('Validation: \t    dice:  {0:.5f} \t   Mean Loss:  {1:.5f} \n'.format( dice_loss.get_avg_loss(),  val_loss))
         return loss_meter.get_avg_loss(),  dice_loss.get_avg_loss()
 
 
     def train_model(self, train=True, model_name=''):
-
-        # record train metrics in tensorboard
-        self.writer = SummaryWriter(  log_dir= Path(__file__).parent.absolute()/'run_logs', comment=self.model_dir)
-        self.loss_logs = { 'train_loss': [], 'train_dice' : [], 'val_loss': [], 'val_dice' : []}
 
         for epoch in range(self.epochs):
             print(20*'+'+' Epoch {} '.format(epoch)+ 20*'+')
@@ -165,7 +163,7 @@ class Trainer:
             #########   VALIDATION   ################
             val_loss_epoch, dice_val= self.validation()
 
-            # reduceLROnPlateau
+            # reduceLROnPlateau (Should be applied on validation loss)
             if self.lr_scheduler:
                 self.lr_scheduler.step(metrics= self.loss_logs['val_loss'][-1])
 
@@ -182,7 +180,6 @@ class Trainer:
         print("Best model on epoch {}: train_dice {}, valid_dice {}".format(best_epoch,
                                                                             self.loss_logs['train_loss'][best_epoch],
                                                                             self.loss_logs['val_dice'][best_epoch]))
-
 
         i = 0
         print("write a training summary")
@@ -208,14 +205,17 @@ if __name__ == '__main__':
     parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=4)
     parser.add_argument("-pt", "--pretrained", help="whether to train from scratch or resume", action="store_true",
                         default=False)
+    parser.add_argument("-lr_find",  help="Run a pretraining to save the optimal lr", type=bool, default=False)
+
     args = parser.parse_args()
 
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
 
+
     CV = 5
     IDS = np.arange(101,126)
-    MODALITY =  ['CO', 'DE', 'T2']
+    MODALITY =   ['CO', 'DE', 'T2']    # MODALITY = ['CO']['DE']['T2']
     for i in range(CV):
         valid_id = IDS[5*i:5*(i+1)]
         train_id = IDS[~np.in1d( IDS, valid_id)]
@@ -228,13 +228,13 @@ if __name__ == '__main__':
         comments += "_fold_{}".format(i)
         print(comments)
         torch.cuda.empty_cache()
+
         model = Segmentation_model(filters=args.n_filter,
                                         in_channels=3,
                                         n_block=args.n_block,
                                         bottleneck_depth=4,
                                         n_class=args.n_class
                                    )
-
         if args.pretrained:
             model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pt'.format(comments)))
 
@@ -253,8 +253,12 @@ if __name__ == '__main__':
                             model_name= 'unet_model_checkpoint.pth.tar',
                             model_dir = './weights/{}/'.format(comments)
                             )
-        # if i == 0:
-        #     Trainer.find_learning_rate()
+
+        if args.lr_find:
+            Trainer.find_learning_rate()
+            print("The learning rate finder has finished ", valid_id)
+            exit(0)
+
         print("The validation IDs are ", valid_id)
         # Train the models
         print("********** Training fold ", i, " ***************")
