@@ -118,6 +118,7 @@ class Trainer:
             loss = self.loss(output_probs, mask)   # loss =  self.loss(output , mask)
             loss.backward()
             self.optim.step()
+            # Update loss recorder tracker metrics
             loss_meter.update(loss.item(), output.size(0) )
             if iter % self.logs == 0: # Print logs
                 print('Epoch [{0}][{1}/{2}]:\t' 'Loss {loss:.4f} '.format(epoch, iter, len(self.train_dataloader), loss=loss.item() ))
@@ -182,10 +183,11 @@ class Trainer:
                                                                             self.loss_logs['val_dice'][best_epoch]))
 
         i = 0
-        print("write a training summary")
-        for t_loss,  v_loss in  zip(self.loss_logs['train_loss'],self.loss_logs['val_loss'] ):
+        print("Write a Tensorboard Training Summary")
+        for t_loss,  v_loss, dice in  zip(self.loss_logs['train_loss'],self.loss_logs['val_loss'], self.loss_logs['val_dice']):
             self.writer.add_scalar('Loss/Training', t_loss, i)
             self.writer.add_scalar('Loss/Validation', v_loss, i)
+            self.writer.add_scalar('Dice/Validation', v_loss, i)
             i += 1
         self.writer.close()
 

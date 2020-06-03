@@ -117,6 +117,7 @@ class MyOpsDataset(Dataset):
         mod = []
         for m in modality:
             mod.append(int(self.MODALITIES[m]))
+        print("The image modalities are: ", mod)
         return mod
 
     def save_check_data(self, **kwargs):
