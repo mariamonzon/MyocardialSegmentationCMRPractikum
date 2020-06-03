@@ -221,6 +221,7 @@ class LRFinder(object):
             plt.xscale("log")
         plt.xlabel("Learning rate")
         plt.ylabel("Loss")
+        # Save Plot
         save_path = os.path.dirname(__file__)
         print("Saving the Loss plot in the folder: " + save_path)
         plt.savefig(os.path.join(save_path,'LearningRate.png'))
