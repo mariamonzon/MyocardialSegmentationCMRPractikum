@@ -123,7 +123,6 @@ class Trainer:
             if iter % self.logs == 0: # Print logs
                 print('Epoch [{0}][{1}/{2}]:\t' 'Loss {loss:.4f} '.format(epoch, iter, len(self.train_dataloader), loss=loss.item() ))
             del image, mask,output
-            torch.cuda.empty_cache()
         train_loss = loss_meter.get_avg_loss()
         self.loss_logs['train_loss'].append( loss_meter.get_avg_loss())
         print('Epoch: [{0}]\t' 'Mean train Loss: {1:.5f}'.format(epoch, train_loss))
@@ -155,7 +154,7 @@ class Trainer:
         return loss_meter.get_avg_loss(),  dice_loss.get_avg_loss()
 
 
-    def train_model(self, train=True, model_name=''):
+    def train_model(self):
 
         for epoch in range(self.epochs):
             print(20*'+'+' Epoch {} '.format(epoch)+ 20*'+')
@@ -190,7 +189,8 @@ class Trainer:
             self.writer.add_scalar('Dice/Validation', v_loss, i)
             i += 1
         self.writer.close()
-
+        # Return the best validation Diece metric
+        return  self.loss_logs['val_dice'][best_epoch]
 
 if __name__ == '__main__':
 
@@ -208,16 +208,18 @@ if __name__ == '__main__':
     parser.add_argument("-pt", "--pretrained", help="whether to train from scratch or resume", action="store_true",
                         default=False)
     parser.add_argument("-lr_find",  help="Run a pretraining to save the optimal lr", type=bool, default=False)
+    parser.add_argument("-mod",  help="MRI modality: 0-all, 1-C0, 2-DE, 3-T2", type=int, default=0)
 
     args = parser.parse_args()
 
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
-
-
+    MR = [['CO', 'DE', 'T2'], ['CO'], ['DE'], ['T2']]
+    torch.cuda.current_device()
     CV = 5
+    CV_dice = CV*[None]
     IDS = np.arange(101,126)
-    MODALITY =   ['CO', 'DE', 'T2']    # MODALITY = ['CO']['DE']['T2']
+    MODALITY =  MR[args.mod]  # ['CO'] # ['CO', 'DE','T2']  MODALITY = ['CO']['DE']['T2']
     for i in range(CV):
         valid_id = IDS[5*i:5*(i+1)]
         train_id = IDS[~np.in1d( IDS, valid_id)]
@@ -229,7 +231,6 @@ if __name__ == '__main__':
         comments = comments + '_' + '_'.join(MODALITY)
         comments += "_fold_{}".format(i)
         print(comments)
-        torch.cuda.empty_cache()
 
         model = Segmentation_model(filters=args.n_filter,
                                         in_channels=3,
@@ -266,9 +267,9 @@ if __name__ == '__main__':
         print("********** Training fold ", i, " ***************")
         start = datetime.now()
         torch.autograd.set_detect_anomaly(True)
-        train_obj.train_model(model_name=comments)
-        end = datetime.now()
-        print("time elapsed for training (hh:mm:ss.ms) {}".format(end - start))
+        CV_dice[i] = train_obj.train_model()
+        print("Time elapsed for training (hh:mm:ss.ms) {}".format( datetime.now() - start))
         del model, train_obj
         torch.cuda.empty_cache()
+    print( " the best accuracies per fold are: ", CV_dice)
     exit(0)

@@ -37,6 +37,7 @@ from albumentations import (
 from albumentations.pytorch.transforms import ToTensor
 from utils.save_data import html, make_directory
 from torch.utils.data import Dataset, ConcatDataset, DataLoader
+from utils.utils import one_hot2dist
 from PIL import Image
 from pathlib import Path
 
@@ -82,7 +83,10 @@ class MyOpsDataset(Dataset):
         mask = np.array(self.PIL_loader(self.root_dir, 'masks/'+ self.file_names.iloc[idx]['mask']) )
         if self.data_augmentation:
             sample = Compose( self.data_augmentation)(image=image, mask=mask)
+        # Get mask with as one-hot mask in each channel [1, n_clases, image_size[0], image_size[1])
         sample['mask'] = self.categorical_maks( sample['mask'] )
+        # Get distance maps for Boundary loss
+        sample['distance_map'] =self.distance_map(sample['mask'])
         return sample
 
     def __add__(self, other):
@@ -114,11 +118,58 @@ class MyOpsDataset(Dataset):
         return  mean, std
 
     def set_modality(self, modality):
+        # elper function to choose the image modality (CO, DE, T2)
         mod = []
         for m in modality:
             mod.append(int(self.MODALITIES[m]))
         print("The image modalities are: ", mod)
         return mod
+
+    def set_augmentation(self, prob = 0.5, image_size =(256,256), data_augmentation= True, **params): # **kwargs
+        # Get the configuration parameters for augmentation
+        rotation = params.get('rotation', True)
+        crop = params.get('crop', True)
+        noise = params.get('noise', False)
+        clahe = params.get('clahe', True)
+        contrast = params.get(' contrast ', False)
+        blur = params.get('blur', False)
+        distorsion = params.get('distorsion', False)
+        augmentation = []
+
+        if data_augmentation and self.phase is 'train':
+            if rotation:
+                augmentation += OneOf([  Rotate(limit=45, interpolation=cv2.INTER_LANCZOS4 ),
+                                         VerticalFlip(),
+                                         HorizontalFlip(),
+                                         RandomRotate90(),
+                                         Transpose(),
+                                         ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=45, interpolation=cv2.INTER_LANCZOS4)
+                                        ], p = prob)
+            if crop:
+                augmentation += OneOf([ RandomCrop( int(image_size[0]*0.875), int(image_size[1]*0.875)),
+                                        CenterCrop(int(image_size[0]*0.875), int(image_size[1]*0.875) ),
+                                        # RandomSizedCrop( (int(image_size[0]*0.875), int(image_size[1]*0.875)), image_size[0], image_size[1], interpolation=cv2.INTER_LANCZOS4)
+                                        ], p=prob)
+            if clahe:
+                augmentation += [CLAHE(p=1., always_apply=True)]
+            elif contrast :
+                augmentation += OneOf([RandomBrightnessContrast(),   RandomGamma()], p = prob )
+            if noise:
+                augmentation += [GaussNoise(p=.5, var_limit=1.)]
+            if distorsion:
+                augmentation +=  OneOf([ GridDistortion(p=.1),
+                                        ElasticTransform(p=.5, sigma=1., alpha_affine=20, border_mode=0)
+                                        ], p=prob)
+            if blur:
+                augmentation +=  OneOf([  MotionBlur(p=.3),
+                                          Blur(blur_limit=3, p=.3),
+                                          GaussianBlur(blur_limit=3, p=.3)
+                                        ], p=prob)
+
+        augmentation += [Resize(image_size[0], image_size[1], cv2.INTER_LANCZOS4),
+                         # Normalize(mean=(self.mean), std=(self.std), max_pixel_value=255.0, always_apply=True, p=1.0),
+                         ToTensor(num_classes=self.num_classes-1)]
+        return augmentation
 
     def save_check_data(self, **kwargs):
         """ For debugging purposes """
@@ -173,53 +224,10 @@ class MyOpsDataset(Dataset):
         with open(Path(path).joinpath(filename), 'rb') as f:
             return cv2.imread(f,cv2.IMREAD_GRAYSCALE)
 
-
-    def set_augmentation(self, prob = 0.5, image_size =(256,256), data_augmentation= True, **params): # **kwargs
-        # Get the configuration parameters
-        rotation = params.get('rotation', True)
-        crop = params.get('crop', True)
-        noise = params.get('noise', False)
-        clahe = params.get('clahe', True)
-        contrast = params.get(' contrast ', False)
-        blur = params.get('blur', False)
-        distorsion = params.get('distorsion', False)
-        augmentation = []
-
-        if data_augmentation and self.phase is 'train':
-            if rotation:
-                augmentation += OneOf([  Rotate(limit=45, interpolation=cv2.INTER_LANCZOS4 ),
-                                         VerticalFlip(),
-                                         HorizontalFlip(),
-                                         RandomRotate90(),
-                                         Transpose(),
-                                         ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=45, interpolation=cv2.INTER_LANCZOS4)
-                                        ], p = prob)
-            if crop:
-                augmentation += OneOf([ RandomCrop( int(image_size[0]*0.875), int(image_size[1]*0.875)),
-                                        CenterCrop(int(image_size[0]*0.875), int(image_size[1]*0.875) ),
-                                        # RandomSizedCrop( (int(image_size[0]*0.875), int(image_size[1]*0.875)), image_size[0], image_size[1], interpolation=cv2.INTER_LANCZOS4)
-                                        ], p=prob)
-            if clahe:
-                augmentation += [CLAHE(p=1., always_apply=True)]
-            elif contrast :
-                augmentation += OneOf([RandomBrightnessContrast(),   RandomGamma()], p = prob )
-            if noise:
-                augmentation += [GaussNoise(p=.5, var_limit=1.)]
-            if distorsion:
-                augmentation +=  OneOf([ GridDistortion(p=.1),
-                                        ElasticTransform(p=.5, sigma=1., alpha_affine=20, border_mode=0)
-                                        ], p=prob)
-            if blur:
-                augmentation +=  OneOf([  MotionBlur(p=.3),
-                                          Blur(blur_limit=3, p=.3),
-                                          GaussianBlur(blur_limit=3, p=.3)
-                                        ], p=prob)
-
-        augmentation += [Resize(image_size[0], image_size[1], cv2.INTER_LANCZOS4),
-                         # Normalize(mean=(self.mean), std=(self.std), max_pixel_value=255.0, always_apply=True, p=1.0),
-                         ToTensor(num_classes=self.num_classes-1)]
-        return augmentation
-
+    @staticmethod
+    def distance_map(mask):
+        maps = one_hot2dist(mask.cpu().numpy(), axis =0)
+        return  torch.from_numpy(maps)
 
 
 def extract_nrrd_data(PATH=r"/human-dataset", CLAHE = False):
