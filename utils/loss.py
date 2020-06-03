@@ -34,6 +34,7 @@ class DiceCoefMultilabelLoss(nn.Module):
         self.activation = torch.nn.Softmax2d()
         self.numLabels = numLabels
 
+
     def forward(self, predict, target):
         dice_loss = 0
         predict = self.activation(predict)
@@ -49,10 +50,6 @@ class DiceCoefMultilabelLoss(nn.Module):
         intersection = predict.contiguous().view(-1) *  target.contiguous().view(-1)
         score = (2.*intersection.sum() + smooth) / (predict.sum() + target.sum()  + smooth)
         return  score
-        # intersection = einsum("bcwh,bcwh->bc", predict, target)
-        # union = (einsum("bcwh->bc", predict) + einsum("bcwh->bc", target))
-        # loss =  1 - (2 * intersection + 1e-10) / (union + 1e-10)
-
 
 class SurfaceLoss(nn.Module):
 
@@ -67,78 +64,6 @@ class SurfaceLoss(nn.Module):
         for c in range(self.numLabels):
             loss += predict[:, c, :, :].mul(target_maps[:, c, :, :])
         return loss/self.numLabels
-
-class BoundaryLoss(nn.Module):
-    """Boundary Loss proposed in:
-    Alexey Bokhovkin et al., Boundary Loss for Remote Sensing Imagery Semantic Segmentation
-    https://arxiv.org/abs/1905.07852
-    """
-
-    def __init__(self, theta0=3, theta=5):
-        super().__init__()
-        self.theta0 = theta0
-        self.theta = theta
-
-    @staticmethod
-    def one_hot(label, n_classes, requires_grad=True):
-        """Return One Hot Label"""
-        one_hot_label = torch.eye(
-            n_classes, device=label.device, requires_grad=requires_grad)[label]
-        one_hot_label = one_hot_label.transpose(1, 3).transpose(2, 3)
-        return one_hot_label
-
-    def forward(self, pred, gt):
-        """
-        Input:
-            - pred: the output from model (before softmax)
-                    shape (N, C, H, W)
-            - gt: ground truth map
-                    shape (N, H, weights)
-        Return:
-            - boundary loss, averaged over mini-bathc
-        """
-
-        n, c, _, _ = pred.shape
-
-        # softmax so that predicted map can be distributed in [0, 1]
-        pred = torch.softmax(pred, dim=1)
-
-        # one-hot vector of ground truth
-        one_hot_gt = one_hot(gt, c)
-
-        # boundary map
-        gt_b = F.max_pool2d(
-            1 - one_hot_gt, kernel_size=self.theta0, stride=1, padding=(self.theta0 - 1) // 2)
-        gt_b -= 1 - one_hot_gt
-
-        pred_b = F.max_pool2d(
-            1 - pred, kernel_size=self.theta0, stride=1, padding=(self.theta0 - 1) // 2)
-        pred_b -= 1 - pred
-
-        # extended boundary map
-        gt_b_ext = F.max_pool2d(
-            gt_b, kernel_size=self.theta, stride=1, padding=(self.theta - 1) // 2)
-
-        pred_b_ext = F.max_pool2d(
-            pred_b, kernel_size=self.theta, stride=1, padding=(self.theta - 1) // 2)
-
-        # reshape
-        gt_b = gt_b.view(n, c, -1)
-        pred_b = pred_b.view(n, c, -1)
-        gt_b_ext = gt_b_ext.view(n, c, -1)
-        pred_b_ext = pred_b_ext.view(n, c, -1)
-
-        # Precision, Recall
-        P = torch.sum(pred_b * gt_b_ext, dim=2) / (torch.sum(pred_b, dim=2) + 1e-7)
-        R = torch.sum(pred_b_ext * gt_b, dim=2) / (torch.sum(gt_b, dim=2) + 1e-7)
-
-        # Boundary F1 Score
-        BF1 = 2 * P * R / (P + R + 1e-7)
-
-        # summing BF1 Score for each class and average over mini-batch
-        loss = torch.mean(1 - BF1)
-        return loss
-
 
 class FocalLoss(nn.Module):
     def __init__(self, gamma):
@@ -185,7 +110,7 @@ class CrossEntropy2d(nn.Module):
                 predict:(n, c, h, weights)
                 target:(n, h, weights)
                 weight (Tensor, optional): a manual rescaling weight given to each class.
-                                           If given, has to be a Tensor of size "nclasses"
+                                            If given, has to be a Tensor of size "nclasses"
         """
         assert not target.requires_grad
         assert predict.dim() == 4
@@ -212,7 +137,7 @@ class TverskyLoss(nn.Module):
     def forward(self, y_pred, y_true, weight=None):
         ones = torch.ones_like(y_true)
         p0 = y_pred
-        p1 = ones - y_pred  # proba that voxels are not class i
+        p1 = ones - y_pred  # prob that voxels are not class i
         g0 = y_true
         g1 = ones - y_true
 
@@ -224,7 +149,6 @@ class TverskyLoss(nn.Module):
         Ncl = torch.cast(torch.shape(y_true)[-1], 'float32')
         return Ncl - T
 
-
     def focal_tversky(self, y_true, y_pred):
         pt_1 = self.forward(self, y_pred, y_true, weight=None)
         gamma = 0.75
@@ -234,7 +158,8 @@ class GeneralizedDice():
     def __init__(self, **kwargs):
         # Self.idc is used to filter out some classes of the target mask. Use fancy indexing
         self.n_classes = kwargs.get("n_classes", 6)
-        self.idc = kwargs.get("idc", range(1, self.n_classes))
+        self.idc = kwargs.get("idc", range(0, self.n_classes))
+        self.eps =  1e-10
         print(f"Initialized {self.__class__.__name__} with {kwargs}")
 
     def __call__(self, probs: Tensor, target: Tensor, _: Tensor) -> Tensor:
@@ -246,10 +171,8 @@ class GeneralizedDice():
         intersection: Tensor = w * einsum("bcwh,bcwh->bc", pc, tc)
         union: Tensor = w * (einsum("bcwh->bc", pc) + einsum("bcwh->bc", tc))
 
-        divided: Tensor = 1 - 2 * (einsum("bc->b", intersection) + 1e-10) / (einsum("bc->b", union) + 1e-10)
-
-        loss = divided.mean()
-
+        GDL: Tensor = 1 - 2 * (einsum("bc->b", intersection) + self.eps) / (einsum("bc->b", union) + self.eps)
+        loss = GDL.mean()
         return loss
 
 
@@ -257,27 +180,28 @@ class DiceLoss():
     def __init__(self, **kwargs):
         # Self.idc: List[int]  is used to filter out some classes of the target mask. Use fancy indexing
         self.n_classes = kwargs.get("n_classes", 6)
-        self.idc = kwargs.get("idc", range(1, self.n_classes))
+        self.idc = kwargs.get("idc", range(0, self.n_classes))
         print(f"Initialized {self.__class__.__name__} with {kwargs}")
+        self.eps = 1e-10
 
-    def __call__(self, probs: Tensor, target: Tensor, _: Tensor) -> Tensor:
-
+    # def __call__(self, probs: Tensor, target: Tensor, _: Tensor) -> Tensor:
+    def forward(self, probs: Tensor, target: Tensor, _: Tensor):
         pc = probs[:, self.idc, ...].type(torch.float32)
         tc = target[:, self.idc, ...].type(torch.float32)
 
         intersection: Tensor = einsum("bcwh,bcwh->bc", pc, tc)
         union: Tensor = (einsum("bcwh->bc", pc) + einsum("bcwh->bc", tc))
 
-        divided: Tensor = 1 - (2 * intersection + 1e-10) / (union + 1e-10)
+        dice_loss: Tensor = 1 - (2 * intersection +self.eps ) / (union + self.eps )
 
-        loss = divided.mean()
+        loss = dice_loss.mean()
 
         return loss
 
 
 class SurfaceLoss(nn.Module):
-    def __init__(self, **kwargs):
 
+    def __init__(self, **kwargs):
         super(SurfaceLoss, self).__init__()
         self.n_classes =  kwargs.get("n_classes", 6)
         # Self.idc:List[int] is used to filter out some classes of the target mask.
@@ -488,8 +412,6 @@ class JensenShannonDiv(nn.Module):
         # normalize to be a pdf
         output_pdf = self.norm(outputs)
         target_pdf = self.norm(targets)
-        # output_pdf /= output_pdf.sum()
-        # target_pdf /= target_pdf.sum()
 
         m = (output_pdf + target_pdf) / 2
         JSD = (self.entropy(output_pdf, m) + self.entropy(output_pdf, target_pdf)) / 2
