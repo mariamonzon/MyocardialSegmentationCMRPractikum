@@ -87,7 +87,7 @@ def probs2one_hot(probs: Tensor) -> Tensor:
 
 
 def one_hot2dist(seg: np.ndarray, axis=1) -> np.ndarray:
-    assert one_hot(torch.Tensor(seg), axis=axis)
+    # assert one_hot(torch.Tensor(seg), axis=axis)
     C: int = len(seg)
 
     res = np.zeros_like(seg)

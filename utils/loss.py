@@ -131,6 +131,7 @@ class CrossEntropy2d(nn.Module):
 
 class TverskyLoss(nn.Module):
     def __init__(self, alpha = 0.5 ,  beta = 0.5):
+        super().__init__()
         self.alpha = alpha
         self.beta = beta
 
@@ -154,11 +155,12 @@ class TverskyLoss(nn.Module):
         gamma = 0.75
         return torch.pow((1 - pt_1), gamma)
 
-class GeneralizedDice():
+class GeneralizedDice(nn.Module):
     def __init__(self, **kwargs):
+        super().__init__()
         # Self.idc is used to filter out some classes of the target mask. Use fancy indexing
         self.n_classes = kwargs.get("n_classes", 6)
-        self.idc = kwargs.get("idc", range(0, self.n_classes))
+        self.idc = kwargs.get("idc", [i for i in range(0, self.n_classes)])
         self.eps =  1e-10
         print(f"Initialized {self.__class__.__name__} with {kwargs}")
 
@@ -176,16 +178,17 @@ class GeneralizedDice():
         return loss
 
 
-class DiceLoss():
+class DiceLoss(nn.Module):
     def __init__(self, **kwargs):
+        super().__init__()
         # Self.idc: List[int]  is used to filter out some classes of the target mask. Use fancy indexing
         self.n_classes = kwargs.get("n_classes", 6)
-        self.idc = kwargs.get("idc", range(0, self.n_classes))
+        self.idc = kwargs.get("idc", [i for i in range(0, self.n_classes)])
         print(f"Initialized {self.__class__.__name__} with {kwargs}")
         self.eps = 1e-10
 
     # def __call__(self, probs: Tensor, target: Tensor, _: Tensor) -> Tensor:
-    def forward(self, probs: Tensor, target: Tensor, _: Tensor):
+    def forward(self, probs: Tensor, target: Tensor):
         pc = probs[:, self.idc, ...].type(torch.float32)
         tc = target[:, self.idc, ...].type(torch.float32)
 
@@ -193,7 +196,6 @@ class DiceLoss():
         union: Tensor = (einsum("bcwh->bc", pc) + einsum("bcwh->bc", tc))
 
         dice_loss: Tensor = 1 - (2 * intersection +self.eps ) / (union + self.eps )
-
         loss = dice_loss.mean()
 
         return loss
@@ -205,7 +207,7 @@ class SurfaceLoss(nn.Module):
         super(SurfaceLoss, self).__init__()
         self.n_classes =  kwargs.get("n_classes", 6)
         # Self.idc:List[int] is used to filter out some classes of the target mask.
-        self.idc= kwargs.get("idc", range(self.n_classes))
+        self.idc= kwargs.get("idc", [i for i in range(0, self.n_classes)])
         print(f"Initialized {self.__class__.__name__} with {kwargs}")
 
     def forward(self, probs: Tensor, dist_maps: Tensor) -> Tensor:
