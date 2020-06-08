@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import argparse
 from utils.utils import one_hot_mask
-from utils.loss import DiceCoefMultilabelLoss, LossMeter
+from utils.loss import DiceCoefMultilabelLoss, LossMeter, DiceLoss
 from model.dilated_unet import Segmentation_model
 from model.lr_finder import LRFinder
 from utils.callbacks import EarlyStoppingCallback, ModelCheckPointCallback
@@ -36,6 +36,7 @@ class Trainer:
                  n_epoch=200,
                  gpu = True,
                  loss = DiceCoefMultilabelLoss(numLabels=6),
+                 n_classes = 6,
                  lr= 0.001,
                  apply_scheduler=True,  # learning rates
                  transform=False,
@@ -65,7 +66,7 @@ class Trainer:
         self.model_dir = model_dir
         self.logs = 25
         # record train metrics in tensorboard and save in folder /run_logs
-        self.writer = SummaryWriter(  log_dir= Path(__file__).parent.absolute()/'run_logs', comment=self.model_dir)
+        self.writer = SummaryWriter( log_dir= Path(__file__).parent.absolute()/'run_logs', comment=self.model_dir)
         self.loss_logs = { 'train_loss': [], 'train_dice' : [], 'val_loss': [], 'val_dice' : []}
 
         # Set the datasets
@@ -74,6 +75,7 @@ class Trainer:
                                           split= True,
                                           phase = 'train',
                                           image_size = (self.WIDTH, self.HEIGHT),
+                                          n_classes=n_classes,
                                           modality = modality )
         train_params = {'batch_size': batch_size, 'shuffle': True} #, 'num_workers': 4}
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
@@ -82,6 +84,7 @@ class Trainer:
                                                       series_id= valid_id.astype(str),
                                                       phase = 'valid',
                                                       image_size =  (self.WIDTH, self.HEIGHT),
+                                                      n_classes=n_classes,
                                                       modality = modality),
                                          batch_size=1, shuffle= False)
 
@@ -197,8 +200,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.0001)
     parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=300)
-    parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation", action="store_true",
-                        default=True)
+    parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default=False)
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default=True)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=100)
     parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=2)
@@ -249,7 +251,8 @@ if __name__ == '__main__':
                             width=  256,
                             height= 256,
                             batch_size= args.batch_size,  # 8
-                            loss=DiceCoefMultilabelLoss(numLabels=args.n_class),
+                            loss= DiceLoss(n_classes=1),
+                            n_classes =args.n_class,
                             augmentation=args.augmentation,
                             lr=args.lr,
                             n_epoch=args.epochs,

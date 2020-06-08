@@ -98,9 +98,9 @@ if __name__ == '__main__':
                                     n_block=args.n_block,
                                     bottleneck_depth=4,
                                     n_class=args.n_class)
-    model_params = 'segmentation_unet_lr_0.001_32_augmentation_CO_DE_T2_fold_1'
+    model_params = 'segmentation_unet_lr_0.001_32_augmentation_T2_fold_0'
     print(model_params)
-    unet_model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pth.tar'.format(model_params),
+    unet_model.load_state_dict(torch.load('./weigths_T2/{}/unet_model_checkpoint.pth.tar'.format(model_params),
                                           map_location= lambda storage, location: storage))
 
 

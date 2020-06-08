@@ -43,7 +43,7 @@ from pathlib import Path
 
 class MyOpsDataset(Dataset):
     MODALITIES = {'CO': 0, 'DE': 1, 'T2': 2}
-    def __init__(self, csv_path, root_path, transform = False, series_id = "", split = True, phase ='train', image_size = (256, 256), modality = ['CO', 'DE', 'T2']):
+    def __init__(self, csv_path, root_path, transform = False, series_id = "", split = True, phase ='train', image_size = (256, 256), n_classes = 6, modality = ['CO', 'DE', 'T2']):
         """
             csv_path (string): path to csv file
             img_path (string): path to the folder where images are
@@ -70,9 +70,9 @@ class MyOpsDataset(Dataset):
         self.mean, self.std = self.normalization()
         self.image_size = image_size
         self.phase = phase
-        self.num_classes = 6
-        self.data_augmentation = self.set_augmentation( 0.5, image_size, data_augmentation = transform,  rotation= True, crop = True, clahe=True, noise=True, blur = True )
-
+        self.num_classes =  n_classes
+        self.data_augmentation = self.set_augmentation( 0.5, image_size, data_augmentation = transform,  rotation= True,
+                                                        crop = True, clahe=True, noise=True, blur = True )
 
     def __len__(self):
         return len(self.file_names)
@@ -83,10 +83,15 @@ class MyOpsDataset(Dataset):
         mask = np.array(self.PIL_loader(self.root_dir, 'masks/'+ self.file_names.iloc[idx]['mask']) )
         if self.data_augmentation:
             sample = Compose( self.data_augmentation)(image=image, mask=mask)
+
         # Get mask with as one-hot mask in each channel [1, n_clases, image_size[0], image_size[1])
-        sample['mask'] = self.categorical_maks( sample['mask'] )
+        if self.num_classes ==1:
+            sample['mask'] = self.binary_mask(sample['mask'])
+        else:
+            sample['mask'] = self.categorical_maks( sample['mask'] )
         # Get distance maps for Boundary loss
         sample['distance_map'] =self.distance_map(sample['mask'])
+
         return sample
 
     def __add__(self, other):
@@ -213,11 +218,15 @@ class MyOpsDataset(Dataset):
 
     def categorical_maks(self, mask):
         """Converts a class vector to binary class matrix."""
-        num_classes =  self.num_classes# len(torch.unique(mask, sorted=True)) #  np.unique(mask )
+        num_classes =  self.num_classes #len(torch.unique(mask, sorted=True)) #  np.unique(mask )
+        # assert num_classes > len(torch.unique(mask))
         channel_mask = torch.zeros((num_classes,) + mask.shape)
         for n, c in enumerate(torch.unique(mask, sorted=True)):
-            channel_mask[n] = 1*(mask == c)
-        return channel_mask
+            channel_mask[n] = (mask == c)
+        return channel_mask.float()
+
+    def binary_mask(self, mask):
+        return (mask > 0.).float()
 
     @staticmethod
     def image_loader(path, filename):
@@ -253,7 +262,7 @@ if __name__ == "__main__":
     from glob import  iglob
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
-    dataset = MyOpsDataset("./input/images_masks_full.csv", "./input", series_id= np.arange(101,110).astype(str), modality = ['T2', 'DE'])
+    dataset = MyOpsDataset("./input/images_masks_full.csv", "./input", series_id= np.arange(101,110).astype(str), n_classes=1, modality = ['T2', 'DE'])
     sample = dataset.__getitem__(0)
     dataset.save_check_data()
     params = {'batch_size': 16, 'shuffle': True, 'num_workers': 6}
