@@ -108,7 +108,7 @@ class Trainer:
     def train_epoch(self, epoch):
         # train unet
         loss_meter = LossMeter()
-        # dice_loss =  LossMeter()
+        dice_metric =  LossMeter()
 
         self.net.train()
         # pid = os.getpid()
@@ -123,12 +123,17 @@ class Trainer:
             self.optim.step()
             # Update loss recorder tracker metrics
             loss_meter.update(loss.item(), output.size(0) )
+
+            l = dice_coefficient_multiclass(output_probs, mask).item()
+            dice_metric.update(l, output.size(0))
+
             if iter % self.logs == 0: # Print logs
                 print('Epoch [{0}][{1}/{2}]:\t' 'Loss {loss:.4f} '.format(epoch, iter, len(self.train_dataloader), loss=loss.item() ))
             del image, mask,output
         train_loss = loss_meter.get_avg_loss()
         self.loss_logs['train_loss'].append( loss_meter.get_avg_loss())
-        print('Epoch: [{0}]\t' 'Mean train Loss: {1:.5f}'.format(epoch, train_loss))
+        self.loss_logs['train_dice'].append(dice_metric.get_avg_loss())
+        print('Epoch: [{0}]\t' 'Mean train Loss:  dice:  {0:.5f} \t   Mean Loss:  {1:.5f} \n'.format( dice_metric.get_avg_loss(), train_loss))
 
         return train_loss
 
@@ -146,7 +151,7 @@ class Trainer:
                 loss = self.loss(output_probs, mask)
                 loss_meter.update(loss.item())
                 output_mask = one_hot_mask(output_probs, channel_axis=1)
-                l = dice(mask, output_mask, numLabels=self.n_clases).item()
+                l = dice_coefficient_multiclass(mask, output_mask).item()
                 dice_loss.update(l, output.size(0))
             del image, mask, output, output_mask
             torch.cuda.empty_cache()

@@ -265,7 +265,17 @@ if __name__ == "__main__":
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
     dataset = MyOpsDataset("./input/images_masks_full.csv", "./input", series_id= np.arange(101,110).astype(str), n_classes=6, modality = ['T2', 'DE'])
-    sample = dataset.__getitem__(0)
+    for idx in range(5)
+        sample = dataset.__getitem__(idx)
+        mask = sample['mask']
+        image= sample['image']
+        plt.imshow(image[0])
+        plt.figure()
+        for i in range(3 * 2):
+            plt.subplot(2, 3, i + 1)
+            plt.imshow(mask[i])
+            plt.axis('off')
+
     dataset.save_check_data()
     params = {'batch_size': 16, 'shuffle': True, 'num_workers': 6}
     dataloader = DataLoader(dataset,**params)
