@@ -203,7 +203,7 @@ if __name__ == '__main__':
     parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default=False)
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default=True)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=100)
-    parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=2)
+    parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
     parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=6)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
     parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=4)

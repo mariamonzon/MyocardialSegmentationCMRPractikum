@@ -264,7 +264,7 @@ if __name__ == "__main__":
     from glob import  iglob
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
-    dataset = MyOpsDataset("./input/images_masks_full.csv", "./input", series_id= np.arange(101,110).astype(str), n_classes=1, modality = ['T2', 'DE'])
+    dataset = MyOpsDataset("./input/images_masks_full.csv", "./input", series_id= np.arange(101,110).astype(str), n_classes=6, modality = ['T2', 'DE'])
     sample = dataset.__getitem__(0)
     dataset.save_check_data()
     params = {'batch_size': 16, 'shuffle': True, 'num_workers': 6}
