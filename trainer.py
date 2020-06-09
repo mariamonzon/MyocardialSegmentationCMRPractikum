@@ -133,8 +133,7 @@ class Trainer:
         train_loss = loss_meter.get_avg_loss()
         self.loss_logs['train_loss'].append( loss_meter.get_avg_loss())
         self.loss_logs['train_dice'].append(dice_metric.get_avg_loss())
-        print('Epoch: [{0}]\t' 'Mean train Loss:  dice:  {0:.5f} \t   Mean Loss:  {1:.5f} \n'.format( dice_metric.get_avg_loss(), train_loss))
-
+        print('Epoch: [{0}]\t' 'Mean train Loss:   {0:.5f} \t   Dice:  {1:.5f} \n'.format(train_loss,  dice_metric.get_avg_loss()))
         return train_loss
 
 
