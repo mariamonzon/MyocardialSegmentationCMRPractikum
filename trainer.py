@@ -66,7 +66,7 @@ class Trainer:
         self.model_dir = model_dir
         self.logs = 25
         # record train metrics in tensorboard and save in folder /run_logs
-        self.writer = SummaryWriter( log_dir= Path(__file__).parent.absolute()/'run_logs', comment=self.model_dir)
+        self.writer = SummaryWriter( log_dir= Path(__file__).parent.absolute()/'run_logs', comment=self.model_name)
         self.loss_logs = { 'train_loss': [], 'train_dice' : [], 'val_loss': [], 'val_dice' : []}
 
         # Set the datasets
@@ -253,7 +253,7 @@ if __name__ == '__main__':
                             batch_size= args.batch_size,  # 8
                             loss= DiceLoss(n_classes=args.n_class),
                             n_classes =args.n_class,
-                            augmentation=args.augmentation,
+                            augmentatn=args.augmentation,
                             lr=args.lr,
                             n_epoch=args.epochs,
                             model_name= 'unet_model_checkpoint.pth.tar',

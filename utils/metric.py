@@ -26,11 +26,11 @@ def IoU(pred, targs):
     return intersection / ((pred+targs).sum() - intersection + 1.0)
 
 
-def dice_coefficient_multiclass( y_pred, y_true, numLabels=6):
+def dice_coefficient_multiclass( y_pred, y_true):
     dice_metric = 0
-    for c in range(0, numLabels):
+    for c in range(y_true.shape[1]):
         dice_metric += DiceCoefMultilabelLoss.dice_coeff( predict = y_pred[:, c, :, :], target= y_true[:, c, :, :])
-    dice_metric /= (numLabels - 1)
+    dice_metric /= (c)
     return dice_metric
 
 def hausdorff_multilabel(y_true, y_pred, numLabels=4, channel='channel_first'):

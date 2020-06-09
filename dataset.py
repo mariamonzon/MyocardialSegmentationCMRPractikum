@@ -81,6 +81,8 @@ class MyOpsDataset(Dataset):
         image = self.load_image(idx)
         # image = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx]['img_'+self.modality[0]], mode='RGB' ))
         mask = np.array(self.PIL_loader(self.root_dir, 'masks/'+ self.file_names.iloc[idx]['mask']) )
+        # HISTOGRAM EQUALIZATION
+
         if self.data_augmentation:
             sample = Compose( self.data_augmentation)(image=image, mask=mask)
 
