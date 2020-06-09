@@ -17,7 +17,7 @@ from utils.loss import DiceCoefMultilabelLoss, LossMeter, DiceLoss
 from model.dilated_unet import Segmentation_model
 from model.lr_finder import LRFinder
 from utils.callbacks import EarlyStoppingCallback, ModelCheckPointCallback
-from utils.metric import dice_coefficient_multiclass
+from utils.metric import dice, dice_coefficient_multiclass
 from dataset import MyOpsDataset
 from torch.utils.data import  DataLoader
 from pathlib import Path
@@ -60,7 +60,7 @@ class Trainer:
         lr_scheduler = ReduceLROnPlateau(optimizer=self.optim, mode='max', factor=.1, patience=100, verbose=True)
         self.lr_scheduler =  lr_scheduler if  apply_scheduler else False
         self.loss = loss.to(self.device)
-
+        self.n_classes = n_classes
         self.to_save_entire_model = False # with model structure
         self.model_name = model_name
         self.model_dir = model_dir
@@ -146,7 +146,7 @@ class Trainer:
                 loss = self.loss(output_probs, mask)
                 loss_meter.update(loss.item())
                 output_mask = one_hot_mask(output_probs, channel_axis=1)
-                l = dice_coefficient_multiclass(mask, output_mask, numLabels=6).item()
+                l = dice(mask, output_mask, numLabels=self.n_clases).item()
                 dice_loss.update(l, output.size(0))
             del image, mask, output, output_mask
             torch.cuda.empty_cache()
@@ -251,7 +251,7 @@ if __name__ == '__main__':
                             width=  256,
                             height= 256,
                             batch_size= args.batch_size,  # 8
-                            loss= DiceLoss(n_classes=1),
+                            loss= DiceLoss(n_classes=args.n_class),
                             n_classes =args.n_class,
                             augmentation=args.augmentation,
                             lr=args.lr,

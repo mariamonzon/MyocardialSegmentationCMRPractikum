@@ -15,6 +15,8 @@ def dice_coefficient_numpy(y_true, y_pred):
 
 
 def dice(pred, targs):
+    pred = pred.flatten()
+    targs = targs.flatten()
     pred = (pred>0).float()
     return 2.0 * (pred*targs).sum() / ((pred+targs).sum() + 1.0)
 
@@ -26,7 +28,7 @@ def IoU(pred, targs):
 
 def dice_coefficient_multiclass( y_pred, y_true, numLabels=6):
     dice_metric = 0
-    for c in range(1, numLabels):
+    for c in range(0, numLabels):
         dice_metric += DiceCoefMultilabelLoss.dice_coeff( predict = y_pred[:, c, :, :], target= y_true[:, c, :, :])
     dice_metric /= (numLabels - 1)
     return dice_metric
