@@ -70,13 +70,13 @@ class Trainer:
         self.loss_logs = { 'train_loss': [], 'train_dice' : [], 'val_loss': [], 'val_dice' : []}
 
         # Set the datasets
-        self.train_dataset = MyOpsDataset(self.train_path, data_dir, transform =  transform,
+        self.train_dataset = MyOpsDataset(self.train_path, data_dir, augmentation=  transform,
                                           series_id=IDs.astype(str),
                                           split= True,
                                           phase = 'train',
                                           image_size = (self.WIDTH, self.HEIGHT),
                                           n_classes=n_classes,
-                                          modality = modality )
+                                          modality = modality)
         train_params = {'batch_size': batch_size, 'shuffle': True} #, 'num_workers': 4}
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
         self.val_dataloader = DataLoader(MyOpsDataset(self.val_path, data_dir,

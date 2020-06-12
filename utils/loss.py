@@ -216,12 +216,30 @@ class SurfaceLoss(nn.Module):
         dc = dist_maps[:, self.idc, ...].type(torch.float32)
 
         multipled = einsum("bcwh,bcwh->bcwh", pc, dc)
-
         loss = multipled.mean()
 
         return loss
 
+class DiceSurfaceLoss(nn.Module):
 
+    def __init__(self, **kwargs):
+        super(SurfaceLoss, self).__init__()
+        self.n_classes =  kwargs.get("n_classes", 6)
+        self.alpha = 0.1
+
+    def forward(self, probs: Tensor,  target: Tensor, dist_maps: Tensor) -> Tensor:
+
+        pc = probs[:, self.idc, ...].type(torch.float32)
+        tc = target[:, self.idc, ...].type(torch.float32)
+        dc = dist_maps[:, self.idc, ...].type(torch.float32)
+
+        surface_loss = einsum("bcwh,bcwh->bcwh", pc, dc)
+        intersection: Tensor = einsum("bcwh,bcwh->bc", pc, tc)
+        union: Tensor = (einsum("bcwh->bc", pc) + einsum("bcwh->bc", tc))
+        dice_loss: Tensor = 1 - (2 * intersection + self.eps) / (union + self.eps)
+        loss = dice_loss.mean()  +  self.alpha * surface_loss.mean()
+
+        return loss
 
 
 class GeneralizedDiceLoss(nn.Module):
