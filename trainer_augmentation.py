@@ -35,7 +35,7 @@ class Trainer:
                  batch_size=4,
                  n_epoch = 500,
                  gpu = True,
-                 loss = DiceLoss(numLabels=6),
+                 loss = DiceLoss(n_classes=6),
                  n_classes = 6,
                  lr= 0.00001,
                  apply_scheduler=True,  # learning rates
@@ -43,7 +43,8 @@ class Trainer:
                  augmentation=False,
                  model_name='unet_model_checkpoint.pth.tar',
                  model_dir = '/weights/',
-                 modality = None):
+                 modality = None,
+                 n_samples=1200):
 
         self.train_path = Path(__file__).parent.joinpath(train_path)
         assert  self.train_path .is_file(), r"The training file_paths is not found"
@@ -77,7 +78,7 @@ class Trainer:
                                           image_size = (self.WIDTH, self.HEIGHT),
                                           n_classes= n_classes,
                                           modality = modality,
-                                          n_samples = 1200)
+                                          n_samples = n_samples)
         train_params = {'batch_size': batch_size, 'shuffle': True} #, 'num_workers': 4}
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
         self.val_dataloader = DataLoader(MyOpsDataset(self.val_path, data_dir,
@@ -208,7 +209,7 @@ if __name__ == '__main__':
     parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=300)
     parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default=False)
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default=True)
-    parser.add_argument("--n_samples", help="number of samples to train", type=int, default=100)
+    parser.add_argument("--n_samples", help="number of samples to train", type=int, default=500)
     parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
     parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=6)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
@@ -216,13 +217,13 @@ if __name__ == '__main__':
     parser.add_argument("-pt", "--pretrained", help="whether to train from scratch or resume", action="store_true",
                         default=False)
     parser.add_argument("-lr_find",  help="Run a pretraining to save the optimal lr", type=bool, default=False)
-    parser.add_argument("-mod",  help="MRI modality: 0-all, 1-C0, 2-DE, 3-T2", type=int, default=0)
+    parser.add_argument("-mod",  help="MRI modality: 0-all, 1-C0, 2-DE, 3-T2, 4-channelwise", type=int, default=0)
 
     args = parser.parse_args()
 
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
-    MR = [['CO', 'DE', 'T2'], ['CO'], ['DE'], ['T2']]
+    MR = [['multi'], ['CO'], ['DE'], ['T2'], ['CO', 'DE', 'T2']]
     torch.cuda.current_device()
     CV = 5
     CV_dice = CV*[None]
@@ -259,11 +260,13 @@ if __name__ == '__main__':
                             batch_size= args.batch_size,  # 8
                             loss= DiceLoss(n_classes=args.n_class),
                             n_classes =args.n_class,
-                            augmentatn=args.augmentation,
+                            augmentation=args.augmentation,
                             lr=args.lr,
                             n_epoch=args.epochs,
                             model_name= 'unet_model_checkpoint.pth.tar',
-                            model_dir = './weights/{}/'.format(comments)
+                            model_dir = './weights/{}/'.format(comments),
+                            modality=MODALITY,
+                            n_samples = args.n_samples
                             )
 
         if args.lr_find:

@@ -132,7 +132,7 @@ class MyOpsDataset(Dataset):
     def set_modality(self, modality):
         # elper function to choose the image modality (CO, DE, T2)
         mod = []
-        if modality is not None:
+        if modality is not 'multi':
             for m in modality:
                 mod.append(self.MODALITIES.get(m, None))
         return mod

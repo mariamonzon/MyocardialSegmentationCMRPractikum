@@ -220,7 +220,7 @@ if __name__ == '__main__':
 
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
-    MR = [None, ['CO', 'DE', 'T2'], ['CO'], ['DE'], ['T2']]
+    MR = [['multi'], ['CO'], ['DE'], ['T2'], ['CO', 'DE', 'T2']]
     torch.cuda.current_device()
     CV = 5
     CV_dice = CV*[None]
@@ -234,7 +234,7 @@ if __name__ == '__main__':
         comments = "segmentation_unet_lr_{}_{}".format( args.lr, args.n_filter)
         if args.augmentation:
             comments += "_augmentation"
-        comments = comments + '_' + '_'.join(MODALITY)
+        comments += '_' + '_'.join(MODALITY)
         comments += "_fold_{}".format(i)
         print(comments)
 
@@ -261,7 +261,8 @@ if __name__ == '__main__':
                             lr=args.lr,
                             n_epoch=args.epochs,
                             model_name= 'unet_model_checkpoint.pth.tar',
-                            model_dir = './weights/{}/'.format(comments)
+                            model_dir = './weights/{}/'.format(comments),
+                            modality=MODALITY
                             )
 
         if args.lr_find:
