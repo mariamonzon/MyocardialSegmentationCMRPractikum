@@ -105,7 +105,7 @@ class MyOpsDataset(Dataset):
         for id in  self.series_id:
             selection = self.file_names[ self.file_names["mask"].str.contains(id) == True]
             file_names = file_names.append(selection)
-        if self.modality == []:
+        if self.modality == [] or self.modality == ['multi']:
             file_names = file_names.melt(id_vars=["mask"])
             file_names = file_names.rename(columns={'value': 'image', 'variable': 'modality'})
             self.modality = [-1]
