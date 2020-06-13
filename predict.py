@@ -42,7 +42,7 @@ def predict_model(dataset, model, device ='cpu', save_images= True, dir_name =""
             print("Image [{0}]:  \t Dice score {1:3f}".format(d, dice_accuracy))
             dice_metric[d] =  dice_accuracy
             if save_images:
-                save_output_image(image, output_masks, mask, d, dice_accuracy, dir_name)
+                save_output_image(image, output_masks, mask, d, dice=dice_accuracy, dir_name =dir_name)
     print("Test mean acuraccy: \t {0:3f}]:".format(np.mean(dice_metric)) )
     return dice_metric
 
@@ -59,10 +59,12 @@ def save_output_image(image, output, mask, id, dice = None, dir_name ='./results
 
     f.add_subplot(1, 3, 2)
     plt.imshow( output_image , cmap='jet'),
-    plt.axis('off')
     plt.title('Prediction Mask')
-    if dice is not  None:
+    if dice is not None:
         plt.xlabel('Dice: {0:.5f}'.format(dice))
+    ax = plt.gca()
+    ax.axes.xaxis.set_ticks([])
+    ax.axes.yaxis.set_ticks([])
 
     f.add_subplot(1, 3, 3)
     plt.imshow( mask_image, cmap='jet'),
@@ -71,29 +73,24 @@ def save_output_image(image, output, mask, id, dice = None, dir_name ='./results
     # plt.show(block=True)
     rect = [0, 0.03, 1, 0.95]
     f.savefig( str(dir_name) + '/image_{}.png'.format(str(id).zfill(3)))
-    plt.imsave( str(dir_name) + '/pred_{}.png'.format(str(id).zfill(3)), output_image)
-    plt.imsave( str(dir_name) +  '/gt_{}.png'.format(str(id).zfill(3)), mask_image)
+    # plt.imsave( str(dir_name) + '/pred_{}.png'.format(str(id).zfill(3)), output_image)
+    # plt.imsave( str(dir_name) +  '/gt_{}.png'.format(str(id).zfill(3)), mask_image)
     plt.close()
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.001)
-    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=300)
-    parser.add_argument("-da", "--augmentation", help="whether to apply gaussian noise", action="store_true",default=True)
     parser.add_argument("-gpu", help="Set the device to use the GPU", type=bool, default=False)
-    parser.add_argument("--n_samples", help="number of samples to train", type=int, default=100)
-    parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
     parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=6)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
     parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=4)
-    parser.add_argument("-pt", "--pretrained", help="whether to train from scratch or resume", action="store_true",
-                        default=False)
+    parser.add_argument("--model_name", help="path to the model", type=str, default='segmentation_unet_lr_0.0001_32_multi_fold_0')
 
     args = parser.parse_args()
 
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
+
 
     model = Segmentation_model(filters=args.n_filter,
                                     in_channels=3,
@@ -102,9 +99,9 @@ if __name__ == '__main__':
                                     n_class=args.n_class)
 
 
-    model_name = 'segmentation_unet_lr_0.0001_32_multi_fold_0'
-    FOLD = 0
-    modality = ['multi']  #['CO', 'DE', 'T2']
+    model_name = 'segmentation_unet_lr_0.0001_32_multi_fold_0' #args.model_name
+    FOLD = int(model_name[-1])
+    modality = model_name.split('_')[-3].split('-') #['CO'] [, 'DE', 'T2']
     print(model_name)
 
     model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pth.tar'.format(model_name)))

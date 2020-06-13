@@ -17,7 +17,7 @@ def load_data(path):
 
 def make_directory(path, dir_name=""):
     dir_path = Path(path).joinpath(dir_name)
-    dir_path.mkdir(exist_ok=True)     # dir_path.mkdir(parents=True, exist_ok=True)
+    dir_path.mkdir(parents=True, exist_ok=True)     # dir_path.mkdir(parents=True, exist_ok=True)
     return dir_path
 
 def remove_files(directory='../weights/*'):

@@ -237,9 +237,9 @@ if __name__ == '__main__':
         comments = "segmentation_unet_lr_{}_{}".format( args.lr, args.n_filter)
         if args.augmentation:
             comments += "_augmentation"
-        comments = comments + '_' + '_'.join(MODALITY)
-        comments += "_fold_{}".format(i)
         comments += "_samples_{}".format(args.n_samples)
+        comments = comments + '_' + '-'.join(MODALITY)
+        comments += "_fold_{}".format(i)
         print(comments)
 
         model = Segmentation_model(filters=args.n_filter,
