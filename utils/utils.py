@@ -89,7 +89,6 @@ def probs2one_hot(probs: Tensor) -> Tensor:
 def one_hot2dist(seg: np.ndarray, axis=1) -> np.ndarray:
     # assert one_hot(torch.Tensor(seg), axis=axis)
     C: int = len(seg)
-
     res = np.zeros_like(seg)
     for c in range(C):
         posmask = seg[c].astype(np.bool)
@@ -103,7 +102,7 @@ def categorical_mask2image(mask:Tensor, axis = 1)-> np.ndarray:
     # assert (len(mask.shape)>3 and mask.shape[0] is not 1)
     image = np.zeros(mask.shape[-2:])
     for  c in range(mask.shape[axis]):
-        image += c * mask[0,c].cpu().numpy()
+        image += c * mask[:, c].cpu().numpy()
     return image
 
 

@@ -3,6 +3,7 @@
 """
 
 import torch
+from torch import Tensor
 import pandas as pd
 # from skimage.exposure import match_histograms
 from utils.image_proces_vis import *
@@ -35,6 +36,7 @@ from albumentations import (
     Compose,
 )
 from albumentations.pytorch.transforms import ToTensor
+
 from utils.save_data import html, make_directory
 from torch.utils.data import Dataset, ConcatDataset, DataLoader
 from utils.utils import one_hot2dist
@@ -83,18 +85,17 @@ class MyOpsDataset(Dataset):
         # image = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx]['img_'+self.modality[0]], mode='RGB' ))
         mask = np.array(self.PIL_loader(self.root_dir, 'masks/'+ self.file_names.iloc[idx]['mask']) )
         # HISTOGRAM EQUALIZATION
-
         sample = Compose( self.transforms)(image=image, mask=mask)
-
         # Get mask with as one-hot mask in each channel [1, n_clases, image_size[0], image_size[1])
         if self.num_classes ==1:
             sample['mask'] = self.binary_mask(sample['mask'])
         else:
             sample['mask'] = self.categorical_maks( sample['mask'] )
-        # Get distance maps for Boundary loss
-        sample['distance_map'] =self.distance_map(sample['mask'])
 
-        return sample
+        # Get distance maps for Boundary loss
+        sample['distance_map'] = self.distance_map(sample['mask'])
+        sample = self.ToTensor(sample)
+        return  sample
 
     def __add__(self, other):
         return ConcatDataset([self, other])
@@ -104,7 +105,7 @@ class MyOpsDataset(Dataset):
         for id in  self.series_id:
             selection = self.file_names[ self.file_names["mask"].str.contains(id) == True]
             file_names = file_names.append(selection)
-        if self.modality == [None]:
+        if self.modality == []:
             file_names = file_names.melt(id_vars=["mask"])
             file_names = file_names.rename(columns={'value': 'image', 'variable': 'modality'})
             self.modality = [-1]
@@ -116,7 +117,7 @@ class MyOpsDataset(Dataset):
         running_std= 0
         for m in self.modality:
             k = self.file_names.columns[m]
-            for p in  self.file_names[k]:
+            for p in self.file_names[k]:
                 images = np.array(self.PIL_loader( self.root_dir , 'train/'+ p ) )
                 mean, std = images.mean(), images.std()
                 running_mean += mean.item()
@@ -130,10 +131,10 @@ class MyOpsDataset(Dataset):
 
     def set_modality(self, modality):
         # elper function to choose the image modality (CO, DE, T2)
-        mod = [None]
+        mod = []
         if modality is not None:
             for m in modality:
-                mod.append(self.MODALITIES.get(m), None)
+                mod.append(self.MODALITIES.get(m, None))
         return mod
 
     @property
@@ -185,31 +186,35 @@ class MyOpsDataset(Dataset):
                                         ], p=prob)
         if clahe:
             augmentation += [CLAHE(p=1., always_apply=True)]
-        augmentation += [Resize(image_size[0], image_size[1], cv2.INTER_LANCZOS4),
+        augmentation += [Resize(image_size[0], image_size[1], cv2.INTER_LANCZOS4)]
                          # Normalize(mean=(self.mean), std=(self.std), max_pixel_value=255.0, always_apply=True, p=1.0),
-                         ToTensor(num_classes=self.num_classes-1)]
+                         # ToTensor(num_classes=self.num_classes-1)]
         return augmentation
 
     def save_check_data(self, **kwargs):
         """ For debugging purposes """
+        from utils.utils import categorical_mask2image
         result_dir = kwargs.get('result_dir', self.root_dir )
         result_dir = make_directory(result_dir, "data_processed_visualization")
         set_matplotlib_params()
-        reds  = colormap_transparent(1,0,0)
+        reds  = colormap_transparent(1,0.5,0)
         for idx in range(self.__len__()):
             # dir_path = os.path.join(result_dir, self.type + '_data_visualization', 'dataset_' + str(idx).zfill(2))
             sample = self.__getitem__(idx)
             print("Image ", idx)
-            image = np.asarray(sample['image']).astype(np.float64)
-            mask  = np.asarray(sample['mask']).astype(np.float64)
+            image = sample['image'].cpu().numpy( ).astype(np.float64)
+            mask = np.zeros(self.image_size)
+            for c in range(sample['mask'].shape[0]):
+                mask += 255*c*sample['mask'][c].cpu().numpy( )
             fig = plt.figure(figsize=(6.40, 6.40))
-            image_name =  self.file_names.iloc[idx]['mask'].split('_')
+            image_name =  self.file_names.iloc[idx%len(self.file_names)]['mask'].split('_')
             plt.title("Image " +  image_name[2]  + " slice " +  image_name[-1][0])
             plt.imshow(image[0], cmap='gray', interpolation='lanczos')
-            plt.imshow(mask.sum(axis=0), cmap=reds, interpolation='lanczos')
+            plt.imshow(mask , cmap=reds, interpolation='lanczos')
             plt.axis('off')
             plt.tight_layout(rect=[0, 0.03, 1, 0.93])
-            fig.savefig(result_dir.joinpath( str( '_').join([image_name[2]] + image_name[4:] )) )
+            filename = 'Image_{}_'.format(idx) + str( '_').join([image_name[2]] + image_name[4:] )
+            fig.savefig(result_dir.joinpath( filename))
             plt.close()
         print("The previsualization of the data is saved in folder: " + str(result_dir))
         html(result_dir, '*', '.png', title='dataset_visualization')
@@ -230,7 +235,7 @@ class MyOpsDataset(Dataset):
                 image[:,:, i] = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx][ key ], mode='L'))
         return image
 
-    def categorical_maks(self, mask):
+    def categorical_maks_torch(self, mask: Tensor):
         """Converts a class vector to binary class matrix."""
         num_classes =  self.num_classes #len(torch.unique(mask, sorted=True)) #  np.unique(mask )
         # assert num_classes > len(torch.unique(mask))
@@ -239,8 +244,19 @@ class MyOpsDataset(Dataset):
             channel_mask[n] = (mask == c)
         return channel_mask.float()
 
+    def categorical_maks(self, mask: np.ndarray):
+        """Converts a class vector to binary class matrix."""
+        num_classes =  self.num_classes
+        channel_mask = np.zeros((num_classes,) + mask.shape).astype(np.float64)
+        for n, c in zip(range(num_classes) , np.unique(mask)):
+            channel_mask[n] = (mask == c)
+        return channel_mask
+
     def binary_mask(self, mask):
-        return (mask > 0.).float()
+        return (mask > 0.)
+
+    def ToTensor(self, sample):
+        return {'image': torch.from_numpy(np.rollaxis(sample['image'], -1, 0) /255.).float(), 'mask': torch.from_numpy(sample['mask']).float(), 'distance_map': torch.from_numpy(sample['distance_map']/255.).float()}
 
     @staticmethod
     def image_loader(path, filename):
@@ -249,8 +265,8 @@ class MyOpsDataset(Dataset):
 
     @staticmethod
     def distance_map(mask):
-        maps = one_hot2dist(mask.cpu().numpy(), axis =0)
-        return  torch.from_numpy(maps)
+        maps = one_hot2dist(mask, axis =0)
+        return  maps # torch.from_numpy(maps) #
 
 
 def extract_nrrd_data(PATH=r"/human-dataset", CLAHE = False):
@@ -299,7 +315,7 @@ if __name__ == "__main__":
     # extract_nrrd_data(PATH=PATH)
     dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id=np.arange(101, 110).astype(str),  n_classes=6, modality=None,n_samples =500)
     # dataset = MyOpsDataset("./input/images_masks_modalities.csv", "./input", series_id= np.arange(101,110).astype(str), n_classes=6, modality = None)
-    for idx in range(5):
+    for idx in range(25,30):
         sample = dataset.__getitem__(idx)
         mask = sample['mask']
         image= sample['image']
@@ -312,6 +328,6 @@ if __name__ == "__main__":
             plt.axis('off')
     plt.show()
 
-    dataset.save_check_data()
+    # dataset.save_check_data()
     params = {'batch_size': 16, 'shuffle': True, 'num_workers': 6}
     dataloader = DataLoader(dataset,**params)
