@@ -214,13 +214,13 @@ if __name__ == '__main__':
     parser.add_argument("-pt", "--pretrained", help="whether to train from scratch or resume", action="store_true",
                         default=False)
     parser.add_argument("-lr_find",  help="Run a pretraining to save the optimal lr", type=bool, default=False)
-    parser.add_argument("-mod",  help="MRI modality: 0-all, 1-C0, 2-DE, 3-T2, 4-no", type=int, default=0)
+    parser.add_argument("-mod",  help="MRI modality: 0-all, 1-C0, 2-DE, 3-T2, 4-channelwise", type=int, default=0)
 
     args = parser.parse_args()
 
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
-    MR = [['CO', 'DE', 'T2'], ['CO'], ['DE'], ['T2'], None]
+    MR = [None, ['CO', 'DE', 'T2'], ['CO'], ['DE'], ['T2']]
     torch.cuda.current_device()
     CV = 5
     CV_dice = CV*[None]
