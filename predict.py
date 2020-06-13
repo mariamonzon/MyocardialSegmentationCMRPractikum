@@ -103,15 +103,15 @@ if __name__ == '__main__':
                                     n_block=args.n_block,
                                     bottleneck_depth=4,
                                     n_class=args.n_class)
-    model_params = 'segmentation_unet_lr_0.001_32_augmentation_T2_fold_0'
+    model_params = 'results_model/segmentation_unet_lr_0.001_32_augmentation_T2_fold_0'
     modality = ['T2']  #['CO', 'DE', 'T2']
 
     print(model_params)
-    model.load_state_dict(torch.load('./results_model/{}/unet_model_checkpoint.pth.tar'.format(model_params)))
+    model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pth.tar'.format(model_params)))
 
 
     valid_id = np.arange(101,126)[5 * FOLD:5 * (FOLD + 1)]
-    dataset = MyOpsDataset("./input/images_masks_full.csv", "./input/",
+    dataset = MyOpsDataset("./input/images_masks_modalities.csv", "./input/",
                                           split= True,
                                           series_id= valid_id.astype(str),
                                           phase = 'valid',

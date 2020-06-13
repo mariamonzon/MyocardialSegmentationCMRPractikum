@@ -5,7 +5,6 @@ Date: Tuesday, 04, 2020
 
 """
 import torch
-from torch import Tensor
 import torch.nn as nn
 import numpy as np
 import os
@@ -19,9 +18,10 @@ from model.dilated_unet import Segmentation_model
 from model.lr_finder import LRFinder
 from utils.callbacks import EarlyStoppingCallback, ModelCheckPointCallback
 from utils.metric import dice, dice_coefficient_multiclass
-from dataset import MyOpsDataset
+from dataset import MyOpsDataset, MyOpsDatasetAugmentation
 from torch.utils.data import  DataLoader
 from pathlib import Path
+
 
 class Trainer:
     def __init__(self, model,
@@ -31,19 +31,19 @@ class Trainer:
                  IDs="",
                  valid_id="",
                  width=256,
-                 height=256,  #image size
+                 height=256,
                  batch_size=4,
-                 n_epoch=200,
+                 n_epoch = 500,
                  gpu = True,
-                 loss = DiceCoefMultilabelLoss(numLabels=6),
+                 loss = DiceLoss(numLabels=6),
                  n_classes = 6,
-                 lr= 0.001,
+                 lr= 0.00001,
                  apply_scheduler=True,  # learning rates
                  transform=False,
                  augmentation=False,
                  model_name='unet_model_checkpoint.pth.tar',
                  model_dir = '/weights/',
-                 modality = ['CO', 'DE', 'T2']):
+                 modality = None):
 
         self.train_path = Path(__file__).parent.joinpath(train_path)
         assert  self.train_path .is_file(), r"The training file_paths is not found"
@@ -70,13 +70,14 @@ class Trainer:
         self.loss_logs = { 'train_loss': [], 'train_dice' : [], 'val_loss': [], 'val_dice' : []}
 
         # Set the datasets
-        self.train_dataset = MyOpsDataset(self.train_path, data_dir, augmentation=  transform,
+        self.train_dataset = MyOpsDatasetAugmentation(self.train_path, data_dir, augmentation=  transform,
                                           series_id=IDs.astype(str),
                                           split= True,
                                           phase = 'train',
                                           image_size = (self.WIDTH, self.HEIGHT),
-                                          n_classes=n_classes,
-                                          modality = modality)
+                                          n_classes= n_classes,
+                                          modality = modality,
+                                          n_samples = 1200)
         train_params = {'batch_size': batch_size, 'shuffle': True} #, 'num_workers': 4}
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
         self.val_dataloader = DataLoader(MyOpsDataset(self.val_path, data_dir,
@@ -84,9 +85,10 @@ class Trainer:
                                                       series_id= valid_id.astype(str),
                                                       phase = 'valid',
                                                       image_size =  (self.WIDTH, self.HEIGHT),
-                                                      n_classes=n_classes,
+                                                      n_classes= n_classes,
                                                       modality = modality),
-                                         batch_size=1, shuffle= False)
+                                                      batch_size=1,
+                                                      shuffle= False)
 
         # Early stop with regards to the validation multi dice Coefficient LOSS
         self.earlystop = EarlyStoppingCallback(patience=15, mode="min")
@@ -214,13 +216,13 @@ if __name__ == '__main__':
     parser.add_argument("-pt", "--pretrained", help="whether to train from scratch or resume", action="store_true",
                         default=False)
     parser.add_argument("-lr_find",  help="Run a pretraining to save the optimal lr", type=bool, default=False)
-    parser.add_argument("-mod",  help="MRI modality: 0-all, 1-C0, 2-DE, 3-T2, 4-no", type=int, default=0)
+    parser.add_argument("-mod",  help="MRI modality: 0-all, 1-C0, 2-DE, 3-T2", type=int, default=0)
 
     args = parser.parse_args()
 
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
-    MR = [['CO', 'DE', 'T2'], ['CO'], ['DE'], ['T2'], None]
+    MR = [['CO', 'DE', 'T2'], ['CO'], ['DE'], ['T2']]
     torch.cuda.current_device()
     CV = 5
     CV_dice = CV*[None]
@@ -257,7 +259,7 @@ if __name__ == '__main__':
                             batch_size= args.batch_size,  # 8
                             loss= DiceLoss(n_classes=args.n_class),
                             n_classes =args.n_class,
-                            augmentation=args.augmentation,
+                            augmentatn=args.augmentation,
                             lr=args.lr,
                             n_epoch=args.epochs,
                             model_name= 'unet_model_checkpoint.pth.tar',

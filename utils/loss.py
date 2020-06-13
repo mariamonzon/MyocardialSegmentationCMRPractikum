@@ -225,7 +225,7 @@ class DiceSurfaceLoss(nn.Module):
     def __init__(self, **kwargs):
         super(SurfaceLoss, self).__init__()
         self.n_classes =  kwargs.get("n_classes", 6)
-        self.alpha = 0.1
+        self.alpha = 0.5
 
     def forward(self, probs: Tensor,  target: Tensor, dist_maps: Tensor) -> Tensor:
 
