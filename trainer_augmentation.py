@@ -239,6 +239,7 @@ if __name__ == '__main__':
             comments += "_augmentation"
         comments = comments + '_' + '_'.join(MODALITY)
         comments += "_fold_{}".format(i)
+        comments += "_samples_{}".format(args.n_samples)
         print(comments)
 
         model = Segmentation_model(filters=args.n_filter,

@@ -42,15 +42,16 @@ def predict_model(dataset, model, device ='cpu', save_images= True, dir_name =""
             print("Image [{0}]:  \t Dice score {1:3f}".format(d, dice_accuracy))
             dice_metric[d] =  dice_accuracy
             if save_images:
-                save_output_image(image, output_masks, mask, d, dir_name)
+                save_output_image(image, output_masks, mask, d, dice_accuracy, dir_name)
     print("Test mean acuraccy: \t {0:3f}]:".format(np.mean(dice_metric)) )
     return dice_metric
 
-def save_output_image(image, output, mask, id, dir_name ='./results/'):
+def save_output_image(image, output, mask, id, dice = None, dir_name ='./results/'):
+    # plt.rc('text', usetex=True)
     image = image[0,0].cpu().numpy()
     output_image = categorical_mask2image(output)
     mask_image = categorical_mask2image(mask)
-    f = plt.figure(figsize=(9.6,5.4))
+    f = plt.figure(figsize=(19.2,6.4), dpi =150)
     f.add_subplot(1, 3, 1)
     plt.imshow(image, cmap='gray')
     plt.title('CARD axial MRI Slice')
@@ -60,16 +61,19 @@ def save_output_image(image, output, mask, id, dir_name ='./results/'):
     plt.imshow( output_image , cmap='jet'),
     plt.axis('off')
     plt.title('Prediction Mask')
+    if dice is not  None:
+        plt.xlabel('Dice: {0:.5f}'.format(dice))
 
     f.add_subplot(1, 3, 3)
-    plt.imshow( mask_image, cmap='gray'),
+    plt.imshow( mask_image, cmap='jet'),
     plt.title('Ground Truth Mask')
     plt.axis('off')
     # plt.show(block=True)
-
-    # f.savefig( str(dir_name) + '/image_{}.png'.format(str(id).zfill(3)))
+    rect = [0, 0.03, 1, 0.95]
+    f.savefig( str(dir_name) + '/image_{}.png'.format(str(id).zfill(3)))
     plt.imsave( str(dir_name) + '/pred_{}.png'.format(str(id).zfill(3)), output_image)
     plt.imsave( str(dir_name) +  '/gt_{}.png'.format(str(id).zfill(3)), mask_image)
+    plt.close()
 
 if __name__ == '__main__':
 
@@ -87,27 +91,23 @@ if __name__ == '__main__':
                         default=False)
 
     args = parser.parse_args()
-    FOLD = 0
+
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
-
-    # calculate the comments
-    model_params = "segmentation_unet_lr_{}_{}".format(args.lr, args.n_filter)
-    if args.augmentation:
-        model_params += "_augmentation"
-    model_params += "_fold_{}".format(FOLD)
-
 
     model = Segmentation_model(filters=args.n_filter,
                                     in_channels=3,
                                     n_block=args.n_block,
                                     bottleneck_depth=4,
                                     n_class=args.n_class)
-    model_params = 'results_model/segmentation_unet_lr_0.001_32_augmentation_T2_fold_0'
-    modality = ['T2']  #['CO', 'DE', 'T2']
 
-    print(model_params)
-    model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pth.tar'.format(model_params)))
+
+    model_name = 'segmentation_unet_lr_0.0001_32_multi_fold_0'
+    FOLD = 0
+    modality = ['multi']  #['CO', 'DE', 'T2']
+    print(model_name)
+
+    model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pth.tar'.format(model_name)))
 
 
     valid_id = np.arange(101,126)[5 * FOLD:5 * (FOLD + 1)]
@@ -119,7 +119,7 @@ if __name__ == '__main__':
                                           modality = modality)
 
 
-    result_dir = make_directory( './results/', model_params)
+    result_dir = make_directory( './results/', model_name)
     dice_accuracy = predict_model(dataset, model, device='cpu', save_images= True, dir_name= result_dir)
     metrics = pd.DataFrame(dice_accuracy, columns=['Dice coefficient'])
-    metrics.to_excel( './results/{}/test_results.xlsx'.format(model_params))
+    metrics.to_excel( './results/{}/test_results.xlsx'.format(model_name))
