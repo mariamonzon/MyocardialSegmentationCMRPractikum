@@ -313,7 +313,7 @@ if __name__ == "__main__":
     from glob import  iglob
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
-    dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id=np.arange(101, 110).astype(str),  n_classes=6, modality=None,n_samples =500)
+    dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id=np.arange(101, 110).astype(str),  n_classes=6, modality=['multi'],n_samples =500)
     # dataset = MyOpsDataset("./input/images_masks_modalities.csv", "./input", series_id= np.arange(101,110).astype(str), n_classes=6, modality = None)
     for idx in range(25,30):
         sample = dataset.__getitem__(idx)

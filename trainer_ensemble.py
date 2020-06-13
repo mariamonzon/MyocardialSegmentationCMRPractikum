@@ -5,19 +5,13 @@ Date: Tuesday, 04, 2020
 
 """
 import torch
-from torch import Tensor
-import torch.nn as nn
+
 import numpy as np
-import os
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import argparse
-from utils.utils import one_hot_mask
 from utils.loss import DiceCoefMultilabelLoss, LossMeter, DiceLoss
-from model.dilated_unet import Segmentation_model,Ensemble_model
+from model.dilated_unet import Ensemble_model
 from trainer import Trainer
-from dataset import MyOpsDatasetAugmentation, MyOpsDataset
 
 if __name__ == '__main__':
 
