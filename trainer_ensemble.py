@@ -17,7 +17,7 @@ from utils.utils import one_hot_mask
 from utils.loss import DiceCoefMultilabelLoss, LossMeter, DiceLoss
 from model.dilated_unet import Segmentation_model,Ensemble_model
 from trainer import Trainer
-
+from dataset import MyOpsDatasetAugmentation, MyOpsDataset
 
 if __name__ == '__main__':
 
@@ -64,6 +64,7 @@ if __name__ == '__main__':
                                    )
         if args.pretrained:
             model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pt'.format(comments)))
+
 
         train_obj = Trainer(model,
                             train_path="./input/images_masks_modalities.csv",
