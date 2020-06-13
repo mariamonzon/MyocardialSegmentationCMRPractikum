@@ -43,7 +43,7 @@ class Trainer:
                  augmentation=False,
                  model_name='unet_model_checkpoint.pth.tar',
                  model_dir = '/weights/',
-                 modality = None,
+                 modality = ['multi'],
                  n_samples=1200):
 
         self.train_path = Path(__file__).parent.joinpath(train_path)
@@ -136,7 +136,7 @@ class Trainer:
         train_loss = loss_meter.get_avg_loss()
         self.loss_logs['train_loss'].append( loss_meter.get_avg_loss())
         self.loss_logs['train_dice'].append(dice_metric.get_avg_loss())
-        print('Epoch: [{0}]\t' 'Mean train Loss:   {0:.5f} \t   Dice:  {1:.5f} \n'.format(train_loss,  dice_metric.get_avg_loss()))
+        print('Epoch: [{0}]\t' 'Mean train Loss:   {1:.5f} \t   Dice:  {2:.5f} \n'.format(epoch, train_loss,  dice_metric.get_avg_loss()))
         return train_loss
 
 

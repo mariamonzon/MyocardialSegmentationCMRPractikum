@@ -116,7 +116,7 @@ class Trainer:
         for iter, data in enumerate(self.train_dataloader):
             image , mask = data['image'].to(self.device), data['mask'].to(self.device)
             self.optim.zero_grad()
-            output = self.net(image, features_out=False)
+            output = self.net(image)
             output_probs = nn.Softmax2d()(output)
             loss = self.loss(output_probs, mask)   # loss =  self.loss(output , mask)
             loss.backward()
@@ -133,7 +133,7 @@ class Trainer:
         train_loss = loss_meter.get_avg_loss()
         self.loss_logs['train_loss'].append( loss_meter.get_avg_loss())
         self.loss_logs['train_dice'].append(dice_metric.get_avg_loss())
-        print('Epoch: [{0}]\t' 'Mean train Loss:   {0:.5f} \t   Dice:  {1:.5f} \n'.format(train_loss,  dice_metric.get_avg_loss()))
+        print('Epoch: [{0}]\t' 'Mean train Loss:   {1:.5f} \t   Dice:  {2:.5f} \n'.format(epoch, train_loss,  dice_metric.get_avg_loss()))
         return train_loss
 
 
@@ -145,7 +145,7 @@ class Trainer:
             for data in self.val_dataloader:
                 image = data['image'].to(self.device)  # Input images
                 mask =  data['mask'].to(self.device)
-                output = self.net(image, features_out=False)
+                output = self.net(image)
                 output_probs = nn.Softmax2d()(output)
                 loss = self.loss(output_probs, mask)
                 loss_meter.update(loss.item())

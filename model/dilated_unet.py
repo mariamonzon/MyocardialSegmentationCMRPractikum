@@ -137,11 +137,29 @@ class Segmentation_model(nn.Module):
             writer.add_graph(model, x)
             print('model plotted')
 
+
+class Ensemble_model(nn.Module):
+    def __init__(self, filters=32, in_channels=3, n_block=4, bottleneck_depth=4, n_class=6):
+        super().__init__()
+        self.net_C0 = Segmentation_model(filters, in_channels, n_block, bottleneck_depth, n_class=n_class)
+        self.net_DE = Segmentation_model(filters, in_channels, n_block, bottleneck_depth, n_class=n_class)
+        self.net_T2 = Segmentation_model(filters, in_channels, n_block, bottleneck_depth, n_class=n_class)
+
+
+    def forward(self, x):
+        x_C0 = x[:, 0, None].repeat(1, 3, 1, 1).clone()
+        x_DE = x[:, 1, None].repeat(1, 3, 1, 1).clone()
+        x_T2 = x[:, 2, None].repeat(1, 3, 1, 1).clone()
+        out1 =  self.net_C0(x_C0)
+        out2 =  self.net_DE(x_DE)
+        out3 = self.net_DE(x_T2)
+        return out1 + out2 + out3
+
 if __name__ == '__main__':
-    model = Segmentation_model(filters=64, n_block=4)
-    x = rand(2, 3, 224, 224)
+    model = Ensemble_model(filters=64, n_block=4)
+    x = rand(2, 3, 256 , 256)
     output = model(x)
-    model.plot_model(model,x)
+
     print("finish")
     input()
 
