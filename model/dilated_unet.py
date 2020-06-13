@@ -122,7 +122,7 @@ class Segmentation_model(nn.Module):
         self.decoder = Decoder(filters=filters, n_block=n_block)
         self.classifier = nn.Conv2d(in_channels=filters, out_channels=n_class, kernel_size=(1, 1))
 
-    def forward(self, x, features_out=True):
+    def forward(self, x, features_out=False):
         output, skip = self.encoder(x)
         output_bottleneck = self.bottleneck(output)
         output = self.decoder(output_bottleneck, skip)
