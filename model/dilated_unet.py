@@ -24,15 +24,15 @@ class Encoder(nn.Module):
                 pad = kernel_size[0] // 2
             else:
                 pad = 0
-            model = [nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=kernel_size, padding=pad),
+            encoder = [nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=kernel_size, padding=pad),
                      nn.ReLU(inplace=True)]
             if batch_norm:
-                model += [nn.BatchNorm2d(num_features=out_ch)]
-            model += [nn.Conv2d(in_channels=out_ch, out_channels=out_ch, kernel_size=kernel_size, padding=pad),
+                encoder += [nn.BatchNorm2d(num_features=out_ch)]
+            encoder += [nn.Conv2d(in_channels=out_ch, out_channels=out_ch, kernel_size=kernel_size, padding=pad),
                       nn.ReLU(inplace=True)]
             if batch_norm:
-                model += [nn.BatchNorm2d(num_features=out_ch)]
-            self.add_module('encoder%d' % (i + 1), nn.Sequential(*model))
+                encoder += [nn.BatchNorm2d(num_features=out_ch)]
+            self.add_module('encoder%d' % (i + 1), nn.Sequential(*encoder))
             conv = [nn.Conv2d(in_channels=in_ch * 3, out_channels=out_ch, kernel_size=1), nn.ReLU(inplace=True)]
             self.add_module('conv1_%d' % (i + 1), nn.Sequential(*conv))
 
@@ -62,9 +62,9 @@ class Bottleneck(nn.Module):
         in_ch = filters * 2 ** (n_block - 1)
         for i in range(depth):
             dilate = 2 ** i
-            model = [nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=kernel_size, padding=dilate,
+            blocks = [nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=kernel_size, padding=dilate,
                           dilation=dilate),nn.ReLU(inplace=True)]
-            self.add_module('bottleneck%d' % (i + 1), nn.Sequential(*model))
+            self.add_module('bottleneck%d' % (i + 1), nn.Sequential(*blocks))
             if i == 0:
                 in_ch = out_ch
 
@@ -88,20 +88,20 @@ class Decoder(nn.Module):
         for i in reversed(range(n_block)):
             out_ch = filters * 2 ** i
             in_ch = 2 * out_ch
-            model = [nn.UpsamplingNearest2d(scale_factor=(2, 2)),
+            decoder = [nn.UpsamplingNearest2d(scale_factor=(2, 2)),
                      nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=kernel_size,
                                padding=pad)]
-            self.add_module('decoder1_%d' % (i + 1), nn.Sequential(*model))
+            self.add_module('decoder1_%d' % (i + 1), nn.Sequential(*decoder))
 
-            model = [nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=kernel_size, padding=pad),
+            decoder = [nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=kernel_size, padding=pad),
                      nn.ReLU(inplace=True)]
             if batch_norm:
-                model += [nn.BatchNorm2d(num_features=out_ch)]
-            model += [nn.Conv2d(in_channels=out_ch, out_channels=out_ch, kernel_size=kernel_size, padding=pad),
+                decoder += [nn.BatchNorm2d(num_features=out_ch)]
+            decoder += [nn.Conv2d(in_channels=out_ch, out_channels=out_ch, kernel_size=kernel_size, padding=pad),
                       nn.ReLU(inplace=True)]
             if batch_norm:
-                model += [nn.BatchNorm2d(num_features=out_ch)]
-            self.add_module('decoder2_%d' % (i + 1), nn.Sequential(*model))
+                decoder += [nn.BatchNorm2d(num_features=out_ch)]
+            self.add_module('decoder2_%d' % (i + 1), nn.Sequential(*decoder))
 
     def forward(self, x, skip):
         i = 0
