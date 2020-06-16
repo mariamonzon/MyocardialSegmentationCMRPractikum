@@ -100,10 +100,10 @@ def one_hot2dist(seg: np.ndarray, axis=1) -> np.ndarray:
 def categorical_mask2image(mask:Tensor, axis = 1)-> np.ndarray:
     # torch.sum(mask, keepdims = True )
     # assert (len(mask.shape)>3 and mask.shape[0] is not 1)
-    image = np.zeros(mask.shape[-3:])
+    image = np.zeros_like( mask[:,0,:,:])
     for  c in range(mask.shape[axis]):
         image += c * mask[:, c].cpu().numpy()
-    return image[0]
+    return image[:, None]
 
 
 def to_categorical(mask, num_classes, channel='channel_first'):
