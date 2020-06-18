@@ -33,7 +33,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
-    torch.cuda.current_device()
+    # torch.cuda.current_device()
     CV = 5
     CV_dice = CV*[None]
     IDS = np.arange(101,126)

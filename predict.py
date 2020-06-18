@@ -49,8 +49,8 @@ def predict_model(dataset, model, device ='cpu', save_images= True, dir_name =""
 def save_output_image(image, output, mask, id, dice = None, dir_name ='./results/'):
     # plt.rc('text', usetex=True)
     image = image[0,0].cpu().numpy()
-    output_image = categorical_mask2image(output)
-    mask_image = categorical_mask2image(mask)
+    output_image = categorical_mask2image(output)[0,0]
+    mask_image = categorical_mask2image(mask)[0,0]
     f = plt.figure(figsize=(19.2,6.4), dpi =150)
     f.add_subplot(1, 3, 1)
     plt.imshow(image, cmap='gray')
@@ -99,7 +99,7 @@ if __name__ == '__main__':
                                     n_class=args.n_class)
 
 
-    model_name = 'segmentation_unet_lr_0.0001_32_multi_fold_0' #args.model_name
+    model_name = 'segmentation_unet_lr_0.0001_32_samples_1000_multi_fold_0' #args.model_name
     FOLD = int(model_name[-1])
     modality = model_name.split('_')[-3].split('-') #['CO'] [, 'DE', 'T2']
     print(model_name)

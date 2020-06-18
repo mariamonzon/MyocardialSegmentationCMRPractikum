@@ -9,9 +9,10 @@ import torch
 from medpy.metric.binary import hd, dc, asd
 import nibabel as nib
 from skimage import measure
-from model.dilated_unet import Ensemble_model
+from model.dilated_unet import Ensemble_model, Segmentation_model
 import argparse
 from utils.utils import one_hot_mask, categorical_mask2image
+from utils.utils import make_directory
 from dataset import MyOpsDataset
 import torch.nn as nn
 #
@@ -45,7 +46,7 @@ def keep_largest_connected_components(mask):
     Keeps only the largest connected components of each label for a segmentation mask.
     '''
     out_img = np.zeros(mask.shape, dtype=np.uint8)
-    for struc_id in [1,2,3,4,5]:
+    for struc_id in  [1,2,3,4,5]:
 
         binary_img = mask == struc_id
         blobs = measure.label(binary_img, connectivity=1)
@@ -117,7 +118,7 @@ def metrics(img_gt, img_pred):
     return res
 
 
-def compute_metrics_on_files(gt, pred):
+def compute_metrics_on_files(gt, pred, dir_name=''):
     """
     Function to give the metrics for two files
 
@@ -137,7 +138,7 @@ def compute_metrics_on_files(gt, pred):
     # print(formatting.format(*HEADER))
     # print(formatting.format(*res))
 
-    f = open('output.txt', 'a')
+    f = open('{}/output.txt'.format(dir_name), 'a')
     print(formatting.format(*res), file=f)  # Python 3.x
 
     return res_rtu
@@ -168,28 +169,47 @@ def reconstuct_volume(vol, img_shape, crop_size=112):
     return recon_vol
 
 
+def load_image(self,idx ):
+    key = self.file_names.columns[self.modality[0]]
+    image = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx][key], mode='RGB'))
+    if len(self.modality)>1:
+        # key = self.file_names.columns[0]
+        for i, m in enumerate(self.modality):
+            key = self.file_names.columns[m]        # key ='img_' + m
+            image[:,:, i] = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx][ key ], mode='L'))
+    return image
+
 def read_img(pat_id, img_len, type='C0'):
-    images = []
+    images=[]
     for im in range(img_len):
         # img = MyOpsDataset.PIL_loader(r'./input/processed/train/myops_training_{}_{}_{}.png'.format(pat_id, type, im))
-        img = cv2.imread(r'./input/train/myops_training_{}_{}_{}.png'.format(pat_id, type, im))
+        if type == 'multi':
+            img = cv2.imread(r'./input/train/myops_training_{}_C0_{}.png'.format(pat_id, type, im))
+            img[1] = cv2.imread(r'./input/train/myops_training_{}_DE_{}.png'.format(pat_id, type, im), cv2.IMREAD_GRAYSCALE)
+            img[2] = cv2.imread(r'./input/train/myops_training_{}_T2_{}.png'.format(pat_id, type, im), cv2.IMREAD_GRAYSCALE)
+        else:
+            img = cv2.imread(r'./input/train/myops_training_{}_{}_{}.png'.format(pat_id, type, im))
         images.append(img)
     return np.array(images)
 
 
-def evaluate_segmentation( device = 'cpu'):
+def evaluate_segmentation(fold=0,   device = 'cpu', model_name = 'unet', mod = 'C0' ):
     """
     :param Model_name: Name of the trained model
     """
-
+    dir_path = make_directory('results',  model_name )
+    print(dir_path)
+    unet_model.eval()
+    ids =  np.arange(101+5* fold, 101+ 5 * (fold + 1))
+    metrics = []
     with torch.no_grad():
-        for pat_id in range(106, 126):
-            test_path = sorted(glob("input/raw/train/myops_training_{}_{}.nii.gz".format(pat_id, 'C0')))
+        for pat_id in ids:
+            test_path = sorted(glob("input/raw/train/myops_training_{}_{}.nii.gz".format(pat_id, mod)))
             mask_path = sorted(glob("input/raw/masks/myops_training_{}_gd.nii.gz".format(pat_id)))
             for imgPath, mskPath in zip(test_path, mask_path):
                 nimg, affine, header = load_nii(mskPath)
                 # print(nimg.shape)
-                vol_resize = read_img(pat_id, nimg.shape[2])
+                vol_resize = read_img(pat_id, nimg.shape[2], mod)
                 x_batch = np.array(vol_resize, np.float32) / 255.
                 x_batch = np.moveaxis(x_batch, -1, 1)
                 # print(x_batch.shape)
@@ -210,9 +230,10 @@ def evaluate_segmentation( device = 'cpu'):
                 pred = np.where(pred == 4, 1220, pred)
                 pred = np.where(pred == 5, 2221, pred)
 
-                compute_metrics_on_files(nimg, pred)
-
-        del pred, nimg
+                metrics.append(compute_metrics_on_files(nimg, pred, dir_path))
+                del pred, nimg
+    metrics = np.asarray(metrics).mean(axis=0)
+    return metrics
 
 if __name__ == '__main__':
 
@@ -234,15 +255,23 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
+    results = np.zeros((5,15))
+    for fold in range(5):
+        unet_model = Segmentation_model(filters=args.n_filter,
+                               in_channels=3,
+                               n_block=args.n_block,
+                               bottleneck_depth=4,
+                               n_class=args.n_class
+                               )
 
-    unet_model = Ensemble_model(filters=args.n_filter,
-                           in_channels=3,
-                           n_block=args.n_block,
-                           bottleneck_depth=4,
-                           n_class=args.n_class
-                           )
-    device = 'gpu' if args.gpu else 'cpu'
-    unet_model.to(device)
-    unet_model.load_state_dict(torch.load('weights/ensemble_unet_lr_0.0001_32_CO-DE-T2_fold_0/unet_model_checkpoint.pth.tar'), strict=False)
-    print("model loaded")
-    evaluate_segmentation(device)
+        device = 'gpu' if args.gpu else 'cpu'
+        unet_model.to(device)
+        mod = 'T2'
+        model_name ='segmentation_unet_lr_0.001_32_{}_fold_{}'.format( mod, fold)
+        unet_model.load_state_dict(torch.load('weights/'+model_name+'/unet_model_checkpoint.pth.tar'), strict=False)
+        print("model loaded:  ", model_name)
+        results[fold] = evaluate_segmentation(fold, device, model_name, mod)
+
+        del unet_model
+    results = ["{:.3f}".format(r) for r in results.mean(axis=0)]
+    print(results)

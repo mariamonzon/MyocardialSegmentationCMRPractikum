@@ -269,7 +269,8 @@ def adjust_learning_rate_discriminator(optimizer, i_iter, cfg):
 def make_directory(path, dir_name):
     # if not os.path.exists(dir_path):
     #     os.makedirs(dir_path)
-    dir_path =Path(path).joinpath(dir_name).mkdir(parents=True, exist_ok=True)
+    dir_path = Path(path).joinpath(dir_name)
+    dir_path.mkdir(parents=True, exist_ok=True)
     return dir_path
 
 if __name__ == '__main__':

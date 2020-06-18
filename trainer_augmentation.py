@@ -224,7 +224,6 @@ if __name__ == '__main__':
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
     MR = [['multi'], ['CO'], ['DE'], ['T2'], ['CO', 'DE', 'T2']]
-    torch.cuda.current_device()
     CV = 5
     CV_dice = CV*[None]
     IDS = np.arange(101,126)
