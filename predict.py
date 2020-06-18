@@ -99,7 +99,7 @@ if __name__ == '__main__':
                                     n_class=args.n_class)
 
 
-    model_name = 'segmentation_unet_lr_0.0001_32_samples_1000_multi_fold_0' #args.model_name
+    model_name = 'segmentation_unet_lr_0.0001_32_surface_loss_01_multi_fold_1' #args.model_name
     FOLD = int(model_name[-1])
     modality = model_name.split('_')[-3].split('-') #['CO'] [, 'DE', 'T2']
     print(model_name)
