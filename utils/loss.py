@@ -230,9 +230,9 @@ class DiceSurfaceLoss(nn.Module):
         self.eps = 1e-10
 
     def forward(self, probs: Tensor,  target: Tensor, dist_maps: Tensor) -> Tensor:
-        pc = probs[:, self.idc, ...].type(torch.float32)
-        tc = target[:, self.idc, ...].type(torch.float32)
-        dc = dist_maps[:, self.idc, ...].type(torch.float32)
+        pc = probs[:, self.idc, ...].to(torch.float32)
+        tc = target[:, self.idc, ...].to(torch.float32)
+        dc = dist_maps[:, self.idc, ...].to(torch.float32)
 
         surface_loss = einsum("bcwh,bcwh->bcwh", pc, dc)
         intersection: Tensor = einsum("bcwh,bcwh->bc", pc, tc)

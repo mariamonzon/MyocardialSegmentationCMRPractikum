@@ -14,11 +14,11 @@ def dice_coefficient_numpy(y_true, y_pred):
     return (2. * intersection + 1.0) / (np.sum(y_true) + np.sum(y_pred) + 1.0)
 
 
-def dice(pred, targs):
-    pred = pred.flatten()
-    targs = targs.flatten()
-    pred = (pred>0).float()
-    return 2.0 * (pred*targs).sum() / ((pred+targs).sum() + 1.0)
+def dice(predict, target, smooth=1):
+    predict = predict.flatten()
+    target =  target.flatten()
+    pred = (predict>0).float()
+    return 2.0 * (pred* target).sum() / ((pred+ target).sum() + smooth)
 
 def IoU(pred, targs):
     pred = (pred>0).float()
@@ -32,6 +32,7 @@ def dice_coefficient_multiclass( y_pred, y_true):
         dice_metric += DiceCoefMultilabelLoss.dice_coeff( predict = y_pred[:, c, :, :], target= y_true[:, c, :, :])
     dice_metric /= c
     return dice_metric
+
 
 
 def hausdorff_multilabel(y_true, y_pred, numLabels=4, channel='channel_first'):

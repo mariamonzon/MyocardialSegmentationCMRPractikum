@@ -304,8 +304,11 @@ class MyOpsDataset(Dataset):
 
 
     def binary_mask(self, mask, label=68):
-        bin_mask =  (mask != label) & (mask > 0.)
-        return (bin_mask).astype(int)[np.newaxis]
+        bin_mask =  np.zeros((2,) + mask.shape).astype(np.float32)
+        bin_mask[0] =  (mask == label) & (mask == 0.)
+        # bin_mask[1] = ~bin_mask[0]
+        bin_mask[1] =  (mask != label) & (mask > 0.)
+        return (bin_mask).astype(float)
 
     def ToTensor(self, sample):
         return {'image': torch.from_numpy(np.rollaxis(sample['image'], -1, 0) /255.).float(), 'mask': torch.from_numpy(sample['mask']).float(), 'distance_map': torch.from_numpy(sample['distance_map']/255.).float()}
