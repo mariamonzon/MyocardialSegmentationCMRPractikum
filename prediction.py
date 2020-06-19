@@ -177,7 +177,7 @@ def load_image(self,idx ):
         for i, m in enumerate(self.modality):
             key = self.file_names.columns[m]        # key ='img_' + m
             image[:,:, i] = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx][ key ], mode='L'))
-    return image
+
 
 def read_img(pat_id, img_len, type='C0'):
     images=[]

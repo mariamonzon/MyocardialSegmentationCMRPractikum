@@ -43,6 +43,9 @@ from utils.utils import one_hot2dist
 from PIL import Image
 from pathlib import Path
 
+
+
+
 class MyOpsDataset(Dataset):
     MODALITIES = {'CO': int(0), 'DE': int(1), 'T2': int(2)}
     def __init__(self, csv_path, root_path, augmentation = False, series_id ="", split = True, phase ='train', image_size = (256, 256), n_classes = 6, modality = ['CO', 'DE', 'T2']):
@@ -86,8 +89,9 @@ class MyOpsDataset(Dataset):
         mask = np.array(self.PIL_loader(self.root_dir, 'masks/'+ self.file_names.iloc[idx]['mask']) )
         # HISTOGRAM EQUALIZATION
         sample = Compose( self.transforms)(image=image, mask=mask)
-        # Get mask with as one-hot mask in each channel [1, n_clases, image_size[0], image_size[1])
-        if self.num_classes ==1:
+
+        # Get mask with as one-hot mask in each channel [n_clases, image_size[0], image_size[1])
+        if self.num_classes ==1 or self.num_classes == 2 :
             sample['mask'] = self.binary_mask(sample['mask'])
         else:
             sample['mask'] = self.categorical_maks( sample['mask'] )
@@ -191,6 +195,52 @@ class MyOpsDataset(Dataset):
                          # ToTensor(num_classes=self.num_classes-1)]
         return augmentation
 
+
+    def set_offline_transform(self, prob = 0.5, image_size =(256, 256), data_augmentation= True, **params): # **kwargs
+        # Get the configuration parameters for augmentation
+        rotation = params.get('rotation', True)
+        crop = params.get('crop', True)
+        noise = params.get('noise', False)
+        clahe = params.get('clahe', True)
+        contrast = params.get(' contrast ', True)
+        blur = params.get('blur', False)
+        distorsion = params.get('distorsion', False)
+        augmentation = []
+
+        if data_augmentation and self.phase is 'train':
+            if rotation:
+                augmentation += OneOf([  Rotate(limit=45, interpolation=cv2.INTER_LANCZOS4 ),
+                                         VerticalFlip(),
+                                         HorizontalFlip(),
+                                         RandomRotate90(),
+                                         Transpose(),
+                                         ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=45, interpolation=cv2.INTER_LANCZOS4)
+                                        ], p = prob)
+            if crop:
+                augmentation += OneOf([ RandomCrop( int(image_size[0]*0.875), int(image_size[1]*0.875)),
+                                        CenterCrop(int(image_size[0]*0.875), int(image_size[1]*0.875) ),
+                                        # RandomSizedCrop( (int(image_size[0]*0.875), int(image_size[1]*0.875)), image_size[0], image_size[1], interpolation=cv2.INTER_LANCZOS4)
+                                        ], p=prob)
+            if contrast :
+                augmentation += OneOf([RandomBrightnessContrast(),   RandomGamma()], p = prob )
+            if noise:
+                augmentation += [GaussNoise(p=.5, var_limit=1.)]
+            if distorsion:
+                augmentation +=  OneOf([ GridDistortion(p=.1),
+                                        ElasticTransform(p=.5, sigma=1., alpha_affine=20, border_mode=0)
+                                        ], p=prob)
+            if blur:
+                augmentation +=  OneOf([  MotionBlur(p=.3),
+                                          Blur(blur_limit=3, p=.3),
+                                          GaussianBlur(blur_limit=3, p=.3)
+                                        ], p=prob)
+        if clahe:
+            augmentation += [CLAHE(p=1., always_apply=True)]
+        augmentation += [Resize(image_size[0], image_size[1], cv2.INTER_LANCZOS4)]
+                         # Normalize(mean=(self.mean), std=(self.std), max_pixel_value=255.0, always_apply=True, p=1.0),
+                         # ToTensor(num_classes=self.num_classes-1)]
+        return augmentation
+
     def save_check_data(self, **kwargs):
         """ For debugging purposes """
         from utils.utils import categorical_mask2image
@@ -247,13 +297,15 @@ class MyOpsDataset(Dataset):
     def categorical_maks(self, mask: np.ndarray):
         """Converts a class vector to binary class matrix."""
         num_classes =  self.num_classes
-        channel_mask = np.zeros((num_classes,) + mask.shape).astype(np.float64)
+        channel_mask = np.zeros((num_classes,) + mask.shape).astype(np.float32)
         for n, c in zip(range(num_classes) , np.unique(mask)):
             channel_mask[n] = (mask == c)
         return channel_mask
 
-    def binary_mask(self, mask):
-        return (mask > 0.)
+
+    def binary_mask(self, mask, label=68):
+        bin_mask =  (mask != label) & (mask > 0.)
+        return (bin_mask).astype(int)[np.newaxis]
 
     def ToTensor(self, sample):
         return {'image': torch.from_numpy(np.rollaxis(sample['image'], -1, 0) /255.).float(), 'mask': torch.from_numpy(sample['mask']).float(), 'distance_map': torch.from_numpy(sample['distance_map']/255.).float()}
@@ -314,8 +366,8 @@ if __name__ == "__main__":
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
     # dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id=np.arange(101, 110).astype(str),  n_classes=6, modality=['multi'],n_samples =500)
-    dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id= np.arange(101,125).astype(str), n_classes=6, modality=['multi'] )
-    for idx in range(300,305):
+    dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id= np.arange(101,125).astype(str), n_classes=1, modality=['multi'] )
+    for idx in range(5,10):
         sample = dataset.__getitem__(idx)
         mask = sample['mask']
         image= sample['image']
