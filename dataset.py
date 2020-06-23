@@ -48,7 +48,7 @@ from pathlib import Path
 
 class MyOpsDataset(Dataset):
     MODALITIES = {'CO': int(0), 'DE': int(1), 'T2': int(2)}
-    def __init__(self, csv_path, root_path, augmentation = False, series_id ="", split = True, phase ='train', image_size = (256, 256), n_classes = 6, modality = ['CO', 'DE', 'T2']):
+    def __init__(self, csv_path, root_path, augmentation = False, series_id ="", split = True, phase ='train', image_size = (256, 256), n_classes = 6, modality = ['CO', 'DE', 'T2'], crop_center=0):
         """
             csv_path (string): path to csv file
             img_path (string): path to the folder where images are
@@ -79,14 +79,20 @@ class MyOpsDataset(Dataset):
         self.data_augmentation = augmentation
         transforms_dict = {'rotation': True, 'crop' : True, 'clahe': True, 'noise': True, 'blur': True}
         self.transforms = self.set_transforms(0.5, image_size, data_augmentation = augmentation, **transforms_dict)
-
+        self.crop = int(crop_center/2)
     def __len__(self):
         return len(self.file_names)
 
     def __getitem__(self, idx):
         image = self.load_image(idx)
-        # image = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx]['img_'+self.modality[0]], mode='RGB' ))
-        mask = np.array(self.PIL_loader(self.root_dir, 'masks/'+ self.file_names.iloc[idx]['mask']) )
+        # mask = np.array(self.PIL_loader(self.root_dir, 'masks/'+ self.file_names.iloc[idx]['mask']) )
+        mask  =  np.load( Path(self.root_dir).joinpath('masks/'+self.file_names.iloc[idx]['mask']) )
+
+        if self.crop: # and self.phase == 'train':
+            center = self.find_center(self.binary_mask(mask)[1],  label= 1)
+            image = self.crop_images(image.copy(), center, window=0.25*max(image.shape))
+            mask = self.crop_images(mask,center,window=0.25*max(mask.shape))
+
         # HISTOGRAM EQUALIZATION
         sample = Compose( self.transforms)(image=image, mask=mask)
 
@@ -145,10 +151,10 @@ class MyOpsDataset(Dataset):
     def augmentation(self):
         return self.data_augmentation
 
-    def set_augmentation(self, augmentation,  params = {'rotation': True, 'crop': True, 'clahe': True, 'noise': True, 'blur': True, 'distorsion':True}):
+    def set_augmentation(self, augmentation,  params = {'rotation': True, 'crop': True, 'clahe': True, 'noise': True, 'blur': True, 'distorsion':True}, prob =0.95):
         assert isinstance(augmentation, bool), "augmentation has to be bool"
         self.data_augmentation = augmentation
-        self.transforms = self.set_transforms(0.5, self.image_size, data_augmentation = augmentation, **params)
+        self.transforms = self.set_transforms(prob, self.image_size, data_augmentation = augmentation, **params)
 
     def set_transforms(self, prob = 0.5, image_size =(256, 256), data_augmentation= True, **params): # **kwargs
         # Get the configuration parameters for augmentation
@@ -257,13 +263,13 @@ class MyOpsDataset(Dataset):
             for c in range(sample['mask'].shape[0]):
                 mask += 255*c*sample['mask'][c].cpu().numpy( )
             fig = plt.figure(figsize=(6.40, 6.40))
-            image_name =  self.file_names.iloc[idx%len(self.file_names)]['mask'].split('_')
+            image_name =  self.file_names.iloc[idx%len(self.file_names)]['mask'][:-4].split('_')
             plt.title("Image " +  image_name[2]  + " slice " +  image_name[-1][0])
             plt.imshow(image[0], cmap='gray', interpolation='lanczos')
             plt.imshow(mask , cmap=reds, interpolation='lanczos')
             plt.axis('off')
             plt.tight_layout(rect=[0, 0.03, 1, 0.93])
-            filename = 'Image_{}_'.format(idx) + str( '_').join([image_name[2]] + image_name[4:] )
+            filename = 'Image_{}_'.format(idx) + str( '_').join([image_name[2]] + image_name[4:])+'.png'
             fig.savefig(result_dir.joinpath( filename))
             plt.close()
         print("The previsualization of the data is saved in folder: " + str(result_dir))
@@ -303,11 +309,15 @@ class MyOpsDataset(Dataset):
         return channel_mask
 
 
-    def binary_mask(self, mask, label=68):
+    def crop_images_mask(self, images, mask):
+        pass
+
+    def binary_mask(self, mask, label=3.):
         bin_mask =  np.zeros((2,) + mask.shape).astype(np.float32)
-        bin_mask[0] =  (mask == label) & (mask == 0.)
+        # rv = 68
+        bin_mask[0] =  (mask ==  label) | (mask == 0.)
         # bin_mask[1] = ~bin_mask[0]
-        bin_mask[1] =  (mask != label) & (mask > 0.)
+        bin_mask[1] =  (mask !=  label) & (mask > 0.)
         return (bin_mask).astype(float)
 
     def ToTensor(self, sample):
@@ -323,6 +333,50 @@ class MyOpsDataset(Dataset):
         maps = one_hot2dist(mask, axis =0)
         return  maps # torch.from_numpy(maps) #
 
+    # @staticmethod
+    # def image_crop( image, mask, c = 255, window = 64):
+    #     # Now crop
+    #     (y, x) = np.where(mask == c)
+    #     (topy, topx) = (np.min(y), np.min(x))
+    #     (bottomy, bottomx) = (np.max(y), np.max(x))
+    #     image = image[topy:bottomy + 1, topx:bottomx + 1]
+    #     return image
+
+    @staticmethod
+    def find_center(mask, label = 1):
+        (y, x) = np.where(mask == label)
+        cx = int(np.mean(x))
+        cy = int(np.mean(y))
+        return cy, cx
+
+    def crop_images(self, image, center, window=128/2):
+
+        txl = max(int(center[0] - window), 0)
+        tyl = max(int(center[1] - window), 0)
+
+        txr = min(int(center[0] + window), int(image.shape[0]))
+        tyr = min(int(center[1] + window), int(image.shape[1]))
+
+        image = image[txl:txr , tyl:tyr ]
+
+        return image
+
+    # @staticmethod
+    # def find_center(mask):
+    #     # Apply cv2.threshold() to get a binary image
+    #     ret, thresh = cv2.threshold(mask, 50, 255, cv2.THRESH_BINARY)
+    #     im, contours, hierarchy = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    #
+    #     # Draw contours:
+    #     cv2.drawContours(image, contours, 0, (0, 255, 0), 2)
+    #
+    #     # Calculate image moments of the detected contour
+    #     M = cv2.moments(contours[0])
+    #
+    #     # Print center (debugging):
+    #     x_centroid= round(M['m10'] / M['m00'])
+    #     y_centroid= round(M['m01'] / M['m00'])
+    #     return x_centroid,y_centroid
 
 def extract_nrrd_data(PATH=r"/human-dataset", CLAHE = False):
     # import nrrd
@@ -344,16 +398,15 @@ def extract_nrrd_data(PATH=r"/human-dataset", CLAHE = False):
         id+=1
 
 
-
 class MyOpsDatasetAugmentation(MyOpsDataset):
     def __init__(self, csv_path, root_path, augmentation = False, series_id ="", split = True, phase ='train', image_size = (256, 256), n_classes = 6, modality = ['CO', 'DE', 'T2'], n_samples = 500):
         super(MyOpsDatasetAugmentation, self).__init__( csv_path, root_path, False, series_id, split, phase, image_size, n_classes, modality)
         self.n_samples = n_samples if n_samples != -1 else len(self.file_names)
         self.sample = n_samples * [None]
-        idx = np.arange(n_samples)
+        # idx = np.arange(n_samples)
         for i in np.arange(n_samples):
             self.sample[i] = super().__getitem__(i% len(self.file_names))
-            if i % len(self.file_names)+1 == 0:
+            if i % len(self.file_names)/2+1 == 0 :
                 super().set_augmentation(True)
 
     def __len__(self):
@@ -366,19 +419,20 @@ class MyOpsDatasetAugmentation(MyOpsDataset):
 
 if __name__ == "__main__":
     from glob import  iglob
+    n_clas =6
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
-    # dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id=np.arange(101, 110).astype(str),  n_classes=6, modality=['multi'],n_samples =500)
-    dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id= np.arange(101,125).astype(str), n_classes=1, modality=['multi'] )
-    for idx in range(5,10):
+    # dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id=np.arange(101, 110).astype(str),  n_classes= n_clas , modality=['CO', 'DE', 'T2'],n_samples =500)
+    dataset = MyOpsDataset("./input/images_masks_modalities.csv", "./input", series_id= np.arange(101,126).astype(str), n_classes= n_clas,  modality=['CO', 'DE', 'T2'], crop_center=256)
+    for idx in range(15, 20):
         sample = dataset.__getitem__(idx)
         mask = sample['mask']
         image= sample['image']
         plt.figure()
         plt.imshow(image[0],  cmap='gray')
         plt.figure()
-        for i in range(3 * 2):
-            plt.subplot(2, 3, i + 1)
+        for i in range( n_clas):
+            plt.subplot(2,  int(n_clas/2), i + 1)
             plt.imshow(mask[i])
             plt.axis('off')
     plt.show()

@@ -76,7 +76,8 @@ class TrainerDistanceLoss:
                                           phase = 'train',
                                           image_size = (self.WIDTH, self.HEIGHT),
                                           n_classes=n_classes,
-                                          modality = modality)
+                                          modality = modality,
+                                          crop_center= 128)
         train_params = {'batch_size': batch_size, 'shuffle': True} #, 'num_workers': 4}
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
         self.val_dataloader = DataLoader(MyOpsDataset(self.val_path, data_dir,
@@ -85,7 +86,8 @@ class TrainerDistanceLoss:
                                                       phase = 'valid',
                                                       image_size =  (self.WIDTH, self.HEIGHT),
                                                       n_classes=n_classes,
-                                                      modality = modality),
+                                                      modality = modality,
+                                                      crop_center= 128),
                                          batch_size=1, shuffle= False)
 
         # Early stop with regards to the validation multi dice Coefficient LOSS
@@ -112,7 +114,6 @@ class TrainerDistanceLoss:
 
         self.net.train()
         # pid = os.getpid()
-
         for iter, data in enumerate(self.train_dataloader):
             image , mask= data['image'].to(self.device), data['mask'].to(self.device)
             distance = data['distance_map'].to(self.device)
@@ -126,15 +127,16 @@ class TrainerDistanceLoss:
             loss_meter.update(loss.item(), output.size(0) )
             l = dice_coefficient_multiclass(output_probs, mask).item()
             dice_metric.update(l, output.size(0))
-
             if iter % self.logs == 0: # Print logs
                 print('Epoch [{0}][{1}/{2}]:\t' 'Loss {loss:.4f} '.format(epoch, iter, len(self.train_dataloader), loss=loss.item() ))
-            del image, mask,output
+            del image, mask, distance, output,output_probs, l
         train_loss = loss_meter.get_avg_loss()
         self.loss_logs['train_loss'].append( loss_meter.get_avg_loss())
         self.loss_logs['train_dice'].append(dice_metric.get_avg_loss())
         print('Epoch: [{0}]\t' 'Mean Train Loss:   {1:.5f} \t   Dice:  {2:.5f} \n'.format(epoch, train_loss,  dice_metric.get_avg_loss()))
+        torch.cuda.empty_cache()
         return train_loss
+
 
 
     def validation(self):
@@ -153,7 +155,7 @@ class TrainerDistanceLoss:
                 output_mask = one_hot_mask(output_probs, channel_axis=1)
                 l = dice_coefficient_multiclass(output_mask, mask).item()
                 dice_loss.update(l, output.size(0))
-            del image, mask, output, output_mask
+            del image, mask, distance, output, output_probs, l
             torch.cuda.empty_cache()
         val_loss = loss_meter.get_avg_loss()
         self.loss_logs['val_loss'].append( loss_meter.get_avg_loss())
@@ -203,12 +205,12 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.001)
-    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=150)
+    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=100)
     parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default=False)
-    parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default=True)
+    parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default= False)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=-1)
     parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
-    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=2)
+    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=6)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
     parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=4)
     parser.add_argument("-pt", "--pretrained", help="whether to train from scratch or resume", action="store_true",
@@ -234,7 +236,7 @@ if __name__ == '__main__':
         comments = "segmentation_unet_lr_{}_{}".format( args.lr, args.n_filter)
         if args.augmentation:
             comments += "_augmentation"
-        comments += "_surface_loss_01"
+        comments += "_crop_image_surface_loss_01"
         comments += '_' + '-'.join(MODALITY)
         comments += "_fold_{}".format(i)
         print(comments)
@@ -266,11 +268,6 @@ if __name__ == '__main__':
                                         modality=MODALITY
                                         )
 
-        if args.lr_find:
-            TrainerDistanceLoss.find_learning_rate()
-            print("The learning rate finder has finished ", valid_id)
-            exit(0)
-
         print("The validation IDs are ", valid_id)
         # Train the models
         print("********** Training fold ", i, " ***************")
@@ -280,5 +277,5 @@ if __name__ == '__main__':
         print("Time elapsed for training (hh:mm:ss.ms) {}".format( datetime.now() - start))
         del model, train_obj
         torch.cuda.empty_cache()
-    print( " the best accuracies per fold are: ", CV_dice)
+    print( " The best accuracies per fold are: ", CV_dice)
     exit(0)
