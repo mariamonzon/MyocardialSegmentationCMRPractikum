@@ -13,6 +13,7 @@ from model.dilated_unet import Ensemble_model, Segmentation_model
 import argparse
 from utils.utils import one_hot_mask, categorical_mask2image
 from utils.utils import make_directory
+from skimage.transform import resize
 from dataset import MyOpsDataset
 import torch.nn as nn
 #
@@ -183,12 +184,13 @@ def read_img(pat_id, img_len, type='C0'):
     images=[]
     for im in range(img_len):
         # img = MyOpsDataset.PIL_loader(r'./input/processed/train/myops_training_{}_{}_{}.png'.format(pat_id, type, im))
-        if type == 'multi':
-            img = cv2.imread(r'./input/train/myops_training_{}_C0_{}.png'.format(pat_id, type, im))
-            img[1] = cv2.imread(r'./input/train/myops_training_{}_DE_{}.png'.format(pat_id, type, im), cv2.IMREAD_GRAYSCALE)
-            img[2] = cv2.imread(r'./input/train/myops_training_{}_T2_{}.png'.format(pat_id, type, im), cv2.IMREAD_GRAYSCALE)
-        else:
+        if type  == 'C0' or type == 'DE'  or type == 'T2':
             img = cv2.imread(r'./input/train/myops_training_{}_{}_{}.png'.format(pat_id, type, im))
+        else:
+            img =       cv2.imread(r'./input/train/myops_training_{}_C0_{}.png'.format(pat_id,  im))
+            img[:,:,1] = cv2.imread(r'./input/train/myops_training_{}_DE_{}.png'.format(pat_id,  im), cv2.IMREAD_GRAYSCALE)
+            img[:,:,2] = cv2.imread(r'./input/train/myops_training_{}_T2_{}.png'.format(pat_id,  im), cv2.IMREAD_GRAYSCALE)
+
         images.append(img)
     return np.array(images)
 
@@ -204,13 +206,14 @@ def evaluate_segmentation(fold=0,   device = 'cpu', model_name = 'unet', mod = '
     metrics = []
     with torch.no_grad():
         for pat_id in ids:
-            test_path = sorted(glob("input/raw/train/myops_training_{}_{}.nii.gz".format(pat_id, mod)))
+            test_path = sorted(glob("input/raw/train/myops_training_{}_{}.nii.gz".format(pat_id, 'C0')))
             mask_path = sorted(glob("input/raw/masks/myops_training_{}_gd.nii.gz".format(pat_id)))
             for imgPath, mskPath in zip(test_path, mask_path):
                 nimg, affine, header = load_nii(mskPath)
                 # print(nimg.shape)
                 vol_resize = read_img(pat_id, nimg.shape[2], mod)
                 x_batch = np.array(vol_resize, np.float32) / 255.
+                x_batch = resize(x_batch, (nimg.shape[2], 256,256, 3), anti_aliasing=True)
                 x_batch = np.moveaxis(x_batch, -1, 1)
                 # print(x_batch.shape)
                 pred= unet_model(torch.tensor(x_batch).to(device))
@@ -230,7 +233,7 @@ def evaluate_segmentation(fold=0,   device = 'cpu', model_name = 'unet', mod = '
                 pred = np.where(pred == 4, 1220, pred)
                 pred = np.where(pred == 5, 2221, pred)
 
-                metrics.append(compute_metrics_on_files(nimg, pred, dir_path))
+                metrics.append(compute_metrics_on_files(nimg, pred, dir_path)[:2])
                 del pred, nimg
     metrics = np.asarray(metrics).mean(axis=0)
     return metrics
@@ -244,7 +247,7 @@ if __name__ == '__main__':
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default=False)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=100)
     parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
-    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=6)
+    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=2)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
     parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=4)
     parser.add_argument("-pt", "--pretrained", help="whether to train from scratch or resume", action="store_true",
@@ -255,7 +258,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
-    results = np.zeros((5,15))
+    results = np.zeros((5,10))
     for fold in range(5):
         unet_model = Segmentation_model(filters=args.n_filter,
                                in_channels=3,
@@ -266,9 +269,11 @@ if __name__ == '__main__':
 
         device = 'gpu' if args.gpu else 'cpu'
         unet_model.to(device)
-        mod = 'T2'
-        model_name ='segmentation_unet_lr_0.001_32_{}_fold_{}'.format( mod, fold)
-        unet_model.load_state_dict(torch.load('weights/'+model_name+'/unet_model_checkpoint.pth.tar'), strict=False)
+        mod = 'CO-DE-T2'
+        # model_name ='segmentation_unet_lr_0.001_32_{}_fold_{}'.format( mod, fold)
+        model_name ='segmentation_unet_lr_0.0001_32_surface_loss_01_samples_500_{}_fold_{}'.format( mod, fold)
+        unet_model.load_state_dict(torch.load('./weigths_localize/{}/unet_model_checkpoint.pth.tar'.format(model_name)))
+
         print("model loaded:  ", model_name)
         results[fold] = evaluate_segmentation(fold, device, model_name, mod)
 

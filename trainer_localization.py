@@ -43,7 +43,9 @@ class TrainerLocalization:
                  augmentation=False,
                  model_name='unet_model_checkpoint.pth.tar',
                  model_dir = '/weights/',
-                 modality = ['CO', 'DE', 'T2']):
+                 modality = ['CO', 'DE', 'T2'],
+                 n_samples = 500
+                 ):
 
         self.train_path = Path(__file__).parent.joinpath(train_path)
         assert  self.train_path .is_file(), r"The training file_paths is not found"
@@ -76,8 +78,9 @@ class TrainerLocalization:
                                           phase = 'train',
                                           image_size = (self.WIDTH, self.HEIGHT),
                                           n_classes=n_classes,
-                                          modality = modality
-                                        )
+                                          modality = modality,
+                                          n_samples=500
+                                          )
         train_params = {'batch_size': batch_size, 'shuffle': True} #, 'num_workers': 4}
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
         self.val_dataloader = DataLoader(MyOpsDataset(self.val_path, data_dir,
@@ -207,7 +210,7 @@ if __name__ == '__main__':
     parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=100)
     parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default=False)
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default=True)
-    parser.add_argument("--n_samples", help="number of samples to train", type=int, default=-1)
+    parser.add_argument("--n_samples", help="number of samples to train", type=int, default= 500)
     parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
     parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=2)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
@@ -265,7 +268,8 @@ if __name__ == '__main__':
                                         n_epoch=args.epochs,
                                         model_name= 'unet_model_checkpoint.pth.tar',
                                         model_dir = './weights/{}/'.format(comments),
-                                        modality=MODALITY
+                                        modality=MODALITY,
+                                        n_samples=args.n_samples
                                         )
 
         print("The validation IDs are ", valid_id)

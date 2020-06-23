@@ -73,7 +73,7 @@ def save_output_image(image, output, mask, id, dice = None, dir_name ='./results
     # plt.show(block=True)
     rect = [0, 0.03, 1, 0.95]
     f.savefig( str(dir_name) + '/image_{}.png'.format(str(id).zfill(3)))
-    # plt.imsave( str(dir_name) + '/pred_{}.png'.format(str(id).zfill(3)), output_image)
+    plt.imsave( str(dir_name) + '/mask_{}.png'.format(str(id).zfill(3)), output_image)
     # plt.imsave( str(dir_name) +  '/gt_{}.png'.format(str(id).zfill(3)), mask_image)
     plt.close()
 
@@ -81,7 +81,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-gpu", help="Set the device to use the GPU", type=bool, default=False)
-    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=6)
+    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=2)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
     parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=4)
     parser.add_argument("--model_name", help="path to the model", type=str, default='segmentation_unet_lr_0.0001_32_multi_fold_0')
@@ -99,12 +99,12 @@ if __name__ == '__main__':
                                     n_class=args.n_class)
 
 
-    model_name = 'segmentation_unet_lr_0.001_32_surface_loss_01_CO-DE-T2_fold_0' #args.model_name
+    model_name = 'segmentation_unet_lr_0.0001_32_surface_loss_01_samples_500_CO-DE-T2_fold_4' #args.model_name
     FOLD = int(model_name[-1])
     modality = model_name.split('_')[-3].split('-') #['CO'] [, 'DE', 'T2']
     print(model_name)
 
-    model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pth.tar'.format(model_name)))
+    model.load_state_dict(torch.load('./weigths_localize/{}/unet_model_checkpoint.pth.tar'.format(model_name)))
 
 
     valid_id = np.arange(101,126)[5 * FOLD:5 * (FOLD + 1)]
@@ -114,7 +114,7 @@ if __name__ == '__main__':
                                           phase = 'valid',
                                           image_size =  (256, 256),
                                           n_classes=args.n_class,
-                                          modality = modality, crop_center=128)
+                                          modality = modality, crop_center=0)
 
 
     result_dir = make_directory( './results/', model_name)

@@ -99,6 +99,8 @@ class MyOpsDataset(Dataset):
         # Get mask with as one-hot mask in each channel [n_clases, image_size[0], image_size[1])
         if self.num_classes ==1 or self.num_classes == 2 :
             sample['mask'] = self.binary_mask(sample['mask'])
+        elif self.num_classes == 3:
+            sample['mask'] = self.categorical_maks_labels(sample['mask'])
         else:
             sample['mask'] = self.categorical_maks( sample['mask'] )
 
@@ -308,6 +310,17 @@ class MyOpsDataset(Dataset):
             channel_mask[n] = (mask == c)
         return channel_mask
 
+    def categorical_maks_labels(self, mask: np.ndarray, labels =[4,5] ):
+        """Converts a class vector to binary class matrix."""
+        num_classes =  self.num_classes
+        channel_mask = np.zeros((num_classes,) + mask.shape).astype(np.float32)
+        for n, c in zip(range(1, num_classes), labels):
+            channel_mask[n] = (mask == c)
+        # Set the rest of the classes as background
+        channel_mask[0] = (channel_mask !=  1).astype(float).sum(axis=0)
+
+        return channel_mask
+
 
     def crop_images_mask(self, images, mask):
         pass
@@ -419,7 +432,7 @@ class MyOpsDatasetAugmentation(MyOpsDataset):
 
 if __name__ == "__main__":
     from glob import  iglob
-    n_clas =6
+    n_clas =3
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
     # dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id=np.arange(101, 110).astype(str),  n_classes= n_clas , modality=['CO', 'DE', 'T2'],n_samples =500)
