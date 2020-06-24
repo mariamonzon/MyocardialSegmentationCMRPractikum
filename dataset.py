@@ -36,7 +36,7 @@ from albumentations import (
     Compose,
 )
 from albumentations.pytorch.transforms import ToTensor
-
+from skimage.measure import label, regionprops
 from utils.save_data import html, make_directory
 from torch.utils.data import Dataset, ConcatDataset, DataLoader
 from utils.utils import one_hot2dist
@@ -148,6 +148,9 @@ class MyOpsDataset(Dataset):
             for m in modality:
                 mod.append(self.MODALITIES.get(m, None))
         return mod
+    @property
+    def filename(self, idx):
+        return self.file_names[idx]['mask']
 
     @property
     def augmentation(self):
@@ -322,9 +325,6 @@ class MyOpsDataset(Dataset):
         return channel_mask
 
 
-    def crop_images_mask(self, images, mask):
-        pass
-
     def binary_mask(self, mask, label=3.):
         bin_mask =  np.zeros((2,) + mask.shape).astype(np.float32)
         # rv = 68
@@ -346,14 +346,33 @@ class MyOpsDataset(Dataset):
         maps = one_hot2dist(mask, axis =0)
         return  maps # torch.from_numpy(maps) #
 
-    # @staticmethod
-    # def image_crop( image, mask, c = 255, window = 64):
-    #     # Now crop
-    #     (y, x) = np.where(mask == c)
-    #     (topy, topx) = (np.min(y), np.min(x))
-    #     (bottomy, bottomx) = (np.max(y), np.max(x))
-    #     image = image[topy:bottomy + 1, topx:bottomx + 1]
+
+
+    # def image_crop(self, mask, c = 255, window = 64):
+    #
+    #
     #     return image
+
+    def save_crop_images(self, mask, idx):
+        image = self.load_image(idx)
+        mask = cv2.resize(mask[0], image.shape[:2])
+        regions = regionprops(mask.astype(int))
+        center = regions[0].centroid
+        bbox =regions[0].bbox
+        image = self.crop_bbox(image, bbox, pad=0)
+        # image = self.crop_images(image,center)
+        image = cv2.resize(image, (64,64))
+        mask_path = Path(self.root_dir).joinpath('masks/' +  self.file_names.iloc[idx]['mask'])
+        original_mask = np.load(mask_path )
+        original_mask = self.crop_bbox(original_mask, bbox)
+        original_mask = cv2.resize(original_mask.astype(int),(64,64), antiasing=True)
+
+        # for i, m in enumerate(self.modality):
+        #     key = self.file_names.columns[m]        # key ='img_' + m
+        #     # cv2.imwrite(  Path(self.root_dir /'train_crop'/ self.file_names.iloc[idx][key]) , image[:,:,i])
+        #     img =  Image.fromarray(image[:, :, i]).save( Path(self.root_dir /'train_crop_bbox'/ self.file_names.iloc[idx][key]))
+        # np.save( Path(self.root_dir).joinpath('masks_crop_bbox/' + self.file_names.iloc[idx]['mask']) ,  original_mask)
+        pass
 
     @staticmethod
     def find_center(mask, label = 1):
@@ -362,7 +381,16 @@ class MyOpsDataset(Dataset):
         cy = int(np.mean(y))
         return cy, cx
 
-    def crop_images(self, image, center, window=128/2):
+    @staticmethod
+    def crop_bbox(images, bbox, pad=0):
+        bb01, bb00, bb11, bb10 = bbox
+        # print(bb01,bb11, bb00,bb10 )
+        images = images[ -pad+bb01:bb11+pad, -pad+bb00:bb10+pad ]
+        return images
+
+
+    @staticmethod
+    def crop_images( image, center, window=128/2):
 
         txl = max(int(center[0] - window), 0)
         tyl = max(int(center[1] - window), 0)
@@ -432,7 +460,7 @@ class MyOpsDatasetAugmentation(MyOpsDataset):
 
 if __name__ == "__main__":
     from glob import  iglob
-    n_clas =3
+    n_clas =6
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
     # dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id=np.arange(101, 110).astype(str),  n_classes= n_clas , modality=['CO', 'DE', 'T2'],n_samples =500)

@@ -88,7 +88,7 @@ class TrainerDistanceLoss:
                                                       n_classes=n_classes,
                                                       modality = modality,
                                                       crop_center= 128),
-                                         batch_size=1, shuffle= Falcase)
+                                        batch_size=1, shuffle= False)
 
         # Early stop with regards to the validation multi dice Coefficient LOSS
         self.earlystop = EarlyStoppingCallback(patience=15, mode="min")

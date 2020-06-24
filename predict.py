@@ -37,7 +37,7 @@ def predict_model(dataset, model, device ='cpu', save_images= True, dir_name =""
             # Get output probability maps
             output_probs = nn.Softmax2d()(output)
             output_masks = one_hot_mask(output_probs ,  channel_axis=1)
-
+            dataset.save_crop_images(categorical_mask2image(output_masks)[0] , d)
             dice_accuracy = dice_coefficient_multiclass(output_masks, mask).item()
             print("Image [{0}]:  \t Dice score {1:3f}".format(d, dice_accuracy))
             dice_metric[d] =  dice_accuracy
@@ -98,26 +98,26 @@ if __name__ == '__main__':
                                     bottleneck_depth=4,
                                     n_class=args.n_class)
 
+    for FOLD in range(5):
+        model_name = 'segmentation_unet_lr_0.0001_32_surface_loss_01_samples_500_CO-DE-T2_fold_{}'.format(FOLD) #args.model_name
+        # FOLD = int(model_name[-1])
+        modality = model_name.split('_')[-3].split('-') #['CO'] [, 'DE', 'T2']
+        print(model_name)
 
-    model_name = 'segmentation_unet_lr_0.0001_32_surface_loss_01_samples_500_CO-DE-T2_fold_4' #args.model_name
-    FOLD = int(model_name[-1])
-    modality = model_name.split('_')[-3].split('-') #['CO'] [, 'DE', 'T2']
-    print(model_name)
-
-    model.load_state_dict(torch.load('./weigths_localize/{}/unet_model_checkpoint.pth.tar'.format(model_name)))
-
-
-    valid_id = np.arange(101,126)[5 * FOLD:5 * (FOLD + 1)]
-    dataset = MyOpsDataset("./input/images_masks_modalities.csv", "./input/",
-                                          split= True,
-                                          series_id= valid_id.astype(str),
-                                          phase = 'valid',
-                                          image_size =  (256, 256),
-                                          n_classes=args.n_class,
-                                          modality = modality, crop_center=0)
+        model.load_state_dict(torch.load('./weights/binary_segmentation_circle/{}/unet_model_checkpoint.pth.tar'.format(model_name)))
 
 
-    result_dir = make_directory( './results/', model_name)
-    dice_accuracy = predict_model(dataset, model, device='cpu', save_images= True, dir_name= result_dir)
-    metrics = pd.DataFrame(dice_accuracy, columns=['Dice coefficient'])
-    metrics.to_excel( './results/{}/test_results.xlsx'.format(model_name))
+        valid_id = np.arange(101,126)[5 * FOLD:5 * (FOLD + 1)]
+        dataset = MyOpsDataset("./input/images_masks_modalities.csv", "./input/",
+                                              split= True,
+                                              series_id= valid_id.astype(str),
+                                              phase = 'valid',
+                                              image_size =  (256, 256),
+                                              n_classes=args.n_class,
+                                              modality = modality, crop_center=0)
+
+
+        result_dir = make_directory( './results/', model_name)
+        dice_accuracy = predict_model(dataset, model, device='cpu', save_images= True, dir_name= result_dir)
+        metrics = pd.DataFrame(dice_accuracy, columns=['Dice coefficient'])
+        metrics.to_excel( './results/{}/test_results.xlsx'.format(model_name))
