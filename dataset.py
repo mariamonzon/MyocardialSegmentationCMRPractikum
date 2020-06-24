@@ -358,20 +358,24 @@ class MyOpsDataset(Dataset):
         mask = cv2.resize(mask[0], image.shape[:2])
         regions = regionprops(mask.astype(int))
         center = regions[0].centroid
-        bbox =regions[0].bbox
-        image = self.crop_bbox(image, bbox, pad=0)
-        # image = self.crop_images(image,center)
-        image = cv2.resize(image, (64,64))
+        bbox = regions[0].bbox
+        dir_data = make_directory(self.root_dir , 'train_crop_96')
+        dir_mask = make_directory(self.root_dir, 'masks_crop_96/')
+        image = self.crop_images(image,center, window=48)
         mask_path = Path(self.root_dir).joinpath('masks/' +  self.file_names.iloc[idx]['mask'])
         original_mask = np.load(mask_path )
-        original_mask = self.crop_bbox(original_mask, bbox)
-        original_mask = cv2.resize(original_mask.astype(int),(64,64), antiasing=True)
 
-        # for i, m in enumerate(self.modality):
-        #     key = self.file_names.columns[m]        # key ='img_' + m
-        #     # cv2.imwrite(  Path(self.root_dir /'train_crop'/ self.file_names.iloc[idx][key]) , image[:,:,i])
-        #     img =  Image.fromarray(image[:, :, i]).save( Path(self.root_dir /'train_crop_bbox'/ self.file_names.iloc[idx][key]))
-        # np.save( Path(self.root_dir).joinpath('masks_crop_bbox/' + self.file_names.iloc[idx]['mask']) ,  original_mask)
+        original_mask = self.crop_images(original_mask, center, window=48)
+        # original_mask = self.crop_bbox(original_mask, bbox)
+        # image = self.crop_bbox(image, bbox, pad=0)
+        # image = cv2.resize(image, (64,64))
+        # original_mask = cv2.resize(original_mask.astype(int),(64,64), antiasing=True)
+
+        for i, m in enumerate(self.modality):
+            key = self.file_names.columns[m]        # key ='img_' + m
+            # cv2.imwrite(  Path(self.root_dir /'train_crop'/ self.file_names.iloc[idx][key]) , image[:,:,i])
+            img =  Image.fromarray(image[:, :, i]).save( dir_data.joinpath( self.file_names.iloc[idx][key]))
+        np.save( dir_mask.joinpath( self.file_names.iloc[idx]['mask']) ,  original_mask)
         pass
 
     @staticmethod
