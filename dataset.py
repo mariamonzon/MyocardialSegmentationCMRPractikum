@@ -366,7 +366,8 @@ class MyOpsDataset(Dataset):
             image = self.load_image(idx)
             mask_path = Path(self.root_dir).joinpath('masks/' + self.file_names.iloc[idx]['mask'])
             original_mask = np.load(mask_path)
-            regions = regionprops(original_mask.astype(int))
+            bin_mask = self.binary_mask(original_mask )
+            regions = regionprops(bin_mask[1].astype(int))
             center = regions[0].centroid
             #  bbox = regions[0].bbox
             dir_data = make_directory(self.root_dir, 'train_crop_128_128_GT/')
@@ -493,12 +494,12 @@ class MyOpsDatasetAugmentation(MyOpsDataset):
 
 if __name__ == "__main__":
     from glob import  iglob
-    n_clas = 5
+    n_clas = 2
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
     # dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id=np.arange(101, 110).astype(str),  n_classes= n_clas , modality=['CO', 'DE', 'T2'],n_samples =500)
-    dataset = MyOpsDataset("./input/filenames.csv", "./input/resampled_input_crop_128", series_id= np.arange(101,105).astype(str), n_classes= n_clas,  modality=['CO', 'DE', 'T2'], crop_center=0)
-    # dataset.crop_gt()
+    dataset = MyOpsDataset("./input/images_masks_modalities.csv", "./input/original", series_id= np.arange(101,126).astype(str), n_classes= n_clas,  modality=['CO', 'DE', 'T2'], crop_center=0)
+    dataset.crop_gt()
     for idx in range(15, 20):
         sample = dataset.__getitem__(idx)
         mask = sample['mask']
