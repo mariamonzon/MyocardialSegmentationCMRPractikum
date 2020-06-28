@@ -14,7 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import argparse
 from utils.utils import one_hot_mask
-from utils.loss import DiceCoefMultilabelLoss, LossMeter, DiceSurfaceLoss
+from utils.loss import DiceCoefMultilabelLoss, LossMeter, GDiceSurfaceLoss
 from model.dilated_unet import Segmentation_model
 from model.lr_finder import LRFinder
 from utils.callbacks import EarlyStoppingCallback, ModelCheckPointCallback
@@ -35,8 +35,8 @@ class TrainerDistanceLoss:
                  batch_size=4,
                  n_epoch=200,
                  gpu = True,
-                 loss =  DiceSurfaceLoss(numLabels=2),
-                 n_classes = 6,
+                 loss =  GDiceSurfaceLoss(numLabels=5),
+                 n_classes = 5,
                  lr= 0.001,
                  apply_scheduler=True,  # learning rates
                  transform=False,
@@ -236,7 +236,7 @@ if __name__ == '__main__':
         comments = "segmentation_unet_lr_{}_{}".format( args.lr, args.n_filter)
         if args.augmentation:
             comments += "_augmentation"
-        comments += "_crop_image_surface_loss_{}".format(alpha)
+        comments += "_crop_image_GD_Surface_loss_{}".format(alpha)
         comments += "_classes_{}".format( args.n_class)
         comments += '_' + '-'.join(MODALITY)
         comments += "_fold_{}".format(i)
@@ -259,7 +259,7 @@ if __name__ == '__main__':
                                         width=  128,
                                         height= 128,
                                         batch_size= args.batch_size,  # 8
-                                        loss= DiceSurfaceLoss(n_classes=args.n_class, alpha =alpha),
+                                        loss= GDiceSurfaceLoss(n_classes=args.n_class, alpha =alpha),
                                         n_classes =args.n_class,
                                         augmentation=args.augmentation,
                                         lr=args.lr,

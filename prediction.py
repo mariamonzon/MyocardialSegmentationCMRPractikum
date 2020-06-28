@@ -180,16 +180,16 @@ def load_image(self,idx ):
             image[:,:, i] = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx][ key ], mode='L'))
 
 
-def read_img(pat_id, img_len, type='C0'):
+def read_img(pat_id, img_len, folder =r'./input/train/' ,type='C0'):
     images=[]
     for im in range(img_len):
         # img = MyOpsDataset.PIL_loader(r'./input/processed/train/myops_training_{}_{}_{}.png'.format(pat_id, type, im))
         if type  == 'C0' or type == 'DE'  or type == 'T2':
-            img = cv2.imread(r'./input/train/myops_training_{}_{}_{}.png'.format(pat_id, type, im))
+            img = cv2.imread(folder  + r'/myops_training_{}_{}_{}.png'.format(pat_id, type, im))
         else:
-            img =       cv2.imread(r'./input/train/myops_training_{}_C0_{}.png'.format(pat_id,  im))
-            img[:,:,1] = cv2.imread(r'./input/train/myops_training_{}_DE_{}.png'.format(pat_id,  im), cv2.IMREAD_GRAYSCALE)
-            img[:,:,2] = cv2.imread(r'./input/train/myops_training_{}_T2_{}.png'.format(pat_id,  im), cv2.IMREAD_GRAYSCALE)
+            img =       cv2.imread(folder  +r'/myops_training_{}_C0_{}.png'.format(pat_id,  im))
+            img[:,:,1] = cv2.imread(folder  +r'/myops_training_{}_DE_{}.png'.format(pat_id,  im), cv2.IMREAD_GRAYSCALE)
+            img[:,:,2] = cv2.imread(folder  +r'/myops_training_{}_T2_{}.png'.format(pat_id,  im), cv2.IMREAD_GRAYSCALE)
 
         images.append(img)
     return np.array(images)
@@ -269,10 +269,10 @@ if __name__ == '__main__':
 
         device = 'gpu' if args.gpu else 'cpu'
         unet_model.to(device)
-        mod = 'CO-DE-T2'
+        mod = 'C0' #'CO-DE-T2'
         # model_name ='segmentation_unet_lr_0.001_32_{}_fold_{}'.format( mod, fold)
-        model_name ='segmentation_unet_lr_0.0001_32_surface_loss_01_samples_500_{}_fold_{}'.format( mod, fold)
-        unet_model.load_state_dict(torch.load('./weigths_localize/{}/unet_model_checkpoint.pth.tar'.format(model_name)))
+        model_name ='segmentation_unet_lr_0.0001_32_crop_image_surface_loss_01_classes_5_{}_fold_{}'.format( mod, fold)
+        unet_model.load_state_dict(torch.load('./weigths/{}/unet_model_checkpoint.pth.tar'.format(model_name)))
 
         print("model loaded:  ", model_name)
         results[fold] = evaluate_segmentation(fold, device, model_name, mod)

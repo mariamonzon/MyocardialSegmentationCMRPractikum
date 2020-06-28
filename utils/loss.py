@@ -243,6 +243,33 @@ class DiceSurfaceLoss(nn.Module):
         return loss
 
 
+class GDiceSurfaceLoss(nn.Module):
+
+    def __init__(self, **kwargs):
+        super().__init__( )
+        self.n_classes =  kwargs.get("n_classes", 6)
+        self.alpha = kwargs.get("alpha", 0.01)
+        self.idc = kwargs.get("idc", [i for i in range(1, self.n_classes)])
+        self.eps = 1e-10
+
+    def forward(self, probs: Tensor,  target: Tensor, dist_maps: Tensor) -> Tensor:
+        pc = probs[:, self.idc, ...].to(torch.float32)
+        tc = target[:, self.idc, ...].to(torch.float32)
+        dc = dist_maps[:, self.idc, ...].to(torch.float32)
+
+        # Generalize Dice Loss
+        w: Tensor = 1 / ((einsum("bcwh->bc", tc).type(torch.float32) + 1e-10) ** 2)
+        intersection: Tensor = w * einsum("bcwh,bcwh->bc", pc, tc)
+        union: Tensor = w * (einsum("bcwh->bc", pc) + einsum("bcwh->bc", tc))
+        GDL: Tensor = 1 - 2 * (einsum("bc->b", intersection) + self.eps) / (einsum("bc->b", union) + self.eps)
+
+        # Surface Loss
+        surface_loss = einsum("bcwh,bcwh->bcwh", pc, dc)
+        loss = (1-self.alpha)*GDL.mean()  +  self.alpha * surface_loss.mean()
+
+        return loss
+
+
 class GeneralizedDiceLoss(nn.Module):
     """Computes Generalized Dice Loss (GDL) as described in https://arxiv.org/pdf/1707.03237.pdf.
     """

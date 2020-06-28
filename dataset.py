@@ -98,9 +98,12 @@ class MyOpsDataset(Dataset):
 
         # Get mask with as one-hot mask in each channel [n_clases, image_size[0], image_size[1])
         if self.num_classes ==1 or self.num_classes == 2 :
-            sample['mask'] = self.binary_mask(sample['mask'])
+            # sample['mask'] = self.binary_mask(sample['mask'])
+            sample['mask'] = self.single_class_mask(sample['mask'])
         elif self.num_classes == 3:
             sample['mask'] = self.categorical_maks_labels(sample['mask'])
+        elif self.num_classes == 5:
+            sample['mask'] = self.categorical_maks_labels(sample['mask'], labels=[1,2,4,5])
         else:
             sample['mask'] = self.categorical_maks( sample['mask'] )
 
@@ -199,8 +202,8 @@ class MyOpsDataset(Dataset):
                                           Blur(blur_limit=3, p=.3),
                                           GaussianBlur(blur_limit=3, p=.3)
                                         ], p=prob)
-        if clahe:
-            augmentation += [CLAHE(p=1., always_apply=True)]
+            if clahe:
+                augmentation += [CLAHE(p=1., always_apply=True)]
         augmentation += [Resize(image_size[0], image_size[1], cv2.INTER_LANCZOS4)]
                          # Normalize(mean=(self.mean), std=(self.std), max_pixel_value=255.0, always_apply=True, p=1.0),
                          # ToTensor(num_classes=self.num_classes-1)]
@@ -245,8 +248,8 @@ class MyOpsDataset(Dataset):
                                           Blur(blur_limit=3, p=.3),
                                           GaussianBlur(blur_limit=3, p=.3)
                                         ], p=prob)
-        if clahe:
-            augmentation += [CLAHE(p=1., always_apply=True)]
+            if clahe:
+                augmentation += [CLAHE(p=0.6, always_apply=True)]
         augmentation += [Resize(image_size[0], image_size[1], cv2.INTER_LANCZOS4)]
                          # Normalize(mean=(self.mean), std=(self.std), max_pixel_value=255.0, always_apply=True, p=1.0),
                          # ToTensor(num_classes=self.num_classes-1)]
@@ -324,6 +327,11 @@ class MyOpsDataset(Dataset):
 
         return channel_mask
 
+    def single_class_mask(self, mask, label=4.):
+        bin_mask =  np.zeros((2,) + mask.shape).astype(np.float32)
+        bin_mask[0] =  (mask !=  label)
+        bin_mask[1] =  (mask ==  label)
+        return (bin_mask).astype(float)
 
     def binary_mask(self, mask, label=3.):
         bin_mask =  np.zeros((2,) + mask.shape).astype(np.float32)
@@ -352,31 +360,61 @@ class MyOpsDataset(Dataset):
     #
     #
     #     return image
+    def crop_gt(self):
+        mod = ['C0', 'DE', 'T2']
+        for idx in range(len(self.file_names)):
+            image = self.load_image(idx)
+            mask_path = Path(self.root_dir).joinpath('masks/' + self.file_names.iloc[idx]['mask'])
+            original_mask = np.load(mask_path)
+            regions = regionprops(original_mask.astype(int))
+            center = regions[0].centroid
+            #  bbox = regions[0].bbox
+            dir_data = make_directory(self.root_dir, 'train_crop_128_128_GT/')
+            dir_mask = make_directory(self.root_dir, 'masks_crop_128_128_GT/')
+            image = self.crop_images(image, center, window=64)
+            original_mask = self.crop_images(original_mask, center, window=64)
+
+            for i, m in enumerate(self.modality):
+                key = self.file_names.columns[m]  # key ='img_' + m
+                Image.fromarray(image[:, :, i]).save(dir_data.joinpath(self.file_names.iloc[idx][key]))
+                mask_name = str( self.file_names.iloc[idx]['mask']).replace('C0', mod[m])
+                np.save(dir_mask.joinpath(mask_name), original_mask.astype(np.uint8))
+
+
 
     def save_crop_images(self, mask, idx):
         image = self.load_image(idx)
         mask = cv2.resize(mask[0], image.shape[:2])
+        mask_path = Path(self.root_dir).joinpath('masks/' + self.file_names.iloc[idx]['mask'])
+        original_mask = np.load(mask_path)
         regions = regionprops(mask.astype(int))
-        center = regions[0].centroid
-        bbox = regions[0].bbox
-        dir_data = make_directory(self.root_dir , 'train_crop_96')
-        dir_mask = make_directory(self.root_dir, 'masks_crop_96/')
-        image = self.crop_images(image,center, window=48)
-        mask_path = Path(self.root_dir).joinpath('masks/' +  self.file_names.iloc[idx]['mask'])
-        original_mask = np.load(mask_path )
+        if len(regions)==0:
+            center =  regionprops(original_mask.astype(int))[0].centroid
+        else:
+            center = regions[0].centroid
+        #  bbox = regions[0].bbox
+        dir_data = make_directory(self.root_dir , 'train_crop_128_128/')
+        dir_mask = make_directory(self.root_dir, 'masks_crop_128_128/')
 
-        original_mask = self.crop_images(original_mask, center, window=48)
-        # original_mask = self.crop_bbox(original_mask, bbox)
-        # image = self.crop_bbox(image, bbox, pad=0)
-        # image = cv2.resize(image, (64,64))
-        # original_mask = cv2.resize(original_mask.astype(int),(64,64), antiasing=True)
+        image = self.crop_images(image,center, window=64)
+        original_mask = self.crop_images(original_mask, center, window=64)
+
+        # original_mask = self.crop_bbox(original_mask, bbox, pad=10)
+        # image = self.crop_bbox(image, bbox, pad=10)
+        # image = Image.fromarray(image).resize((96,96))
+        # image  = np.fromstring(image.tobytes(), dtype=np.uint8).reshape((image.size[1], image.size[0], 3))
+        # image = cv2.resize(image, (96,96), interpolation=0)
+        # original_mask = cv2.resize(original_mask,(96,96), interpolation=0)
 
         for i, m in enumerate(self.modality):
             key = self.file_names.columns[m]        # key ='img_' + m
             # cv2.imwrite(  Path(self.root_dir /'train_crop'/ self.file_names.iloc[idx][key]) , image[:,:,i])
-            img =  Image.fromarray(image[:, :, i]).save( dir_data.joinpath( self.file_names.iloc[idx][key]))
-        np.save( dir_mask.joinpath( self.file_names.iloc[idx]['mask']) ,  original_mask)
-        pass
+            # image[:, :, i].save(dir_data.joinpath(self.file_names.iloc[idx][key]))
+            Image.fromarray(image[:, :, i]).save(dir_data.joinpath( self.file_names.iloc[idx][key]) )
+        np.save( dir_mask.joinpath( self.file_names.iloc[idx]['mask']) ,  original_mask.astype(np.uint8))
+
+        del image, mask,   original_mask, dir_data, dir_mask
+        return None
 
     @staticmethod
     def find_center(mask, label = 1):
@@ -405,23 +443,15 @@ class MyOpsDataset(Dataset):
         image = image[txl:txr , tyl:tyr ]
 
         return image
+    @staticmethod
+    def create_csv( folder_path, mask_path):
+        modalities  = ['C0', 'DE', 'T2']
+        files = pd.DataFrame(columns=modalities+['mask'])
+        for m in modalities:
+            files[str(m)]=  [p.relative_to(folder_path) for p in Path(folder_path).glob('*_'+m+'_*.png')]
 
-    # @staticmethod
-    # def find_center(mask):
-    #     # Apply cv2.threshold() to get a binary image
-    #     ret, thresh = cv2.threshold(mask, 50, 255, cv2.THRESH_BINARY)
-    #     im, contours, hierarchy = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    #
-    #     # Draw contours:
-    #     cv2.drawContours(image, contours, 0, (0, 255, 0), 2)
-    #
-    #     # Calculate image moments of the detected contour
-    #     M = cv2.moments(contours[0])
-    #
-    #     # Print center (debugging):
-    #     x_centroid= round(M['m10'] / M['m00'])
-    #     y_centroid= round(M['m01'] / M['m00'])
-    #     return x_centroid,y_centroid
+        files['mask'] = [pm.relative_to(mask_path) for pm in Path(mask_path).glob('*_'+'C0'+'_*.npy')]
+        files.to_csv('./input/filenames.csv', sep=';')
 
 def extract_nrrd_data(PATH=r"/human-dataset", CLAHE = False):
     # import nrrd
@@ -445,13 +475,13 @@ def extract_nrrd_data(PATH=r"/human-dataset", CLAHE = False):
 
 class MyOpsDatasetAugmentation(MyOpsDataset):
     def __init__(self, csv_path, root_path, augmentation = False, series_id ="", split = True, phase ='train', image_size = (256, 256), n_classes = 6, modality = ['CO', 'DE', 'T2'], n_samples = 500):
-        super(MyOpsDatasetAugmentation, self).__init__( csv_path, root_path, False, series_id, split, phase, image_size, n_classes, modality)
+        super(MyOpsDatasetAugmentation, self).__init__( csv_path, root_path, augmentation , series_id, split, phase, image_size, n_classes, modality)
         self.n_samples = n_samples if n_samples != -1 else len(self.file_names)
-        self.sample = n_samples * [None]
+        self.sample = self.n_samples *  [None]
         # idx = np.arange(n_samples)
-        for i in np.arange(n_samples):
-            self.sample[i] = super().__getitem__(i% len(self.file_names))
-            if i % len(self.file_names)/2+1 == 0 :
+        for i in np.arange(self.n_samples):
+            self.sample[i] = super().__getitem__(i % len(self.file_names))
+            if i % len(self.file_names)+1 == 0:
                 super().set_augmentation(True)
 
     def __len__(self):
@@ -461,14 +491,14 @@ class MyOpsDatasetAugmentation(MyOpsDataset):
         return self.sample[idx]
 
 
-
 if __name__ == "__main__":
     from glob import  iglob
-    n_clas =6
+    n_clas = 5
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
     # dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id=np.arange(101, 110).astype(str),  n_classes= n_clas , modality=['CO', 'DE', 'T2'],n_samples =500)
-    dataset = MyOpsDataset("./input/images_masks_modalities.csv", "./input", series_id= np.arange(101,126).astype(str), n_classes= n_clas,  modality=['CO', 'DE', 'T2'], crop_center=256)
+    dataset = MyOpsDataset("./input/filenames.csv", "./input/resampled_input_crop_128", series_id= np.arange(101,105).astype(str), n_classes= n_clas,  modality=['CO', 'DE', 'T2'], crop_center=0)
+    # dataset.crop_gt()
     for idx in range(15, 20):
         sample = dataset.__getitem__(idx)
         mask = sample['mask']
@@ -477,7 +507,7 @@ if __name__ == "__main__":
         plt.imshow(image[0],  cmap='gray')
         plt.figure()
         for i in range( n_clas):
-            plt.subplot(2,  int(n_clas/2), i + 1)
+            plt.subplot(2,  int(2*n_clas/4+1), i + 1)
             plt.imshow(mask[i])
             plt.axis('off')
     plt.show()

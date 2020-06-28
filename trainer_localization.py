@@ -79,7 +79,7 @@ class TrainerLocalization:
                                           image_size = (self.WIDTH, self.HEIGHT),
                                           n_classes=n_classes,
                                           modality = modality,
-                                          n_samples=500
+                                          n_samples=n_samples
                                           )
         train_params = {'batch_size': batch_size, 'shuffle': True} #, 'num_workers': 4}
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
@@ -207,10 +207,10 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.001)
-    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=100)
+    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=125)
     parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default=False)
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default=True)
-    parser.add_argument("--n_samples", help="number of samples to train", type=int, default= 500)
+    parser.add_argument("--n_samples", help="number of samples to train", type=int, default= -1)
     parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
     parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=2)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
@@ -235,7 +235,7 @@ if __name__ == '__main__':
         train_id = IDS[~np.in1d( IDS, valid_id)]
 
         # calculate the comments
-        comments = "segmentation_unet_lr_{}_{}".format( args.lr, args.n_filter)
+        comments = "localization_unet_lr_{}_{}".format( args.lr, args.n_filter)
         if args.augmentation:
             comments += "_augmentation"
         comments += "_surface_loss_01"
@@ -254,7 +254,7 @@ if __name__ == '__main__':
             model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pt'.format(comments)))
 
         train_obj = TrainerLocalization(model,
-                                        train_path="./input/images_masks_modalities.csv",
+                                        train_path="./input/filenames.csv",
                                         data_dir = "./input/",
                                         IDs=train_id,
                                         valid_id=valid_id,
@@ -262,9 +262,9 @@ if __name__ == '__main__':
                                         height= 256,
                                         batch_size= args.batch_size,  # 8
                                         loss= DiceSurfaceLoss(n_classes=args.n_class),
-                                        n_classes =args.n_class,
-                                        augmentation=args.augmentation,
-                                        lr=args.lr,
+                                        n_classes = args.n_class,
+                                        augmentation= args.augmentation,
+                                        lr= args.lr,
                                         n_epoch=args.epochs,
                                         model_name= 'unet_model_checkpoint.pth.tar',
                                         model_dir = './weights/{}/'.format(comments),
