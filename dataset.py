@@ -508,11 +508,13 @@ class MyOpsDatasetAugmentation(MyOpsDataset):
     def __getitem__(self, idx):
         return self.sample[idx]
 
+
+
 class MyOpsDatasetPatches(MyOpsDataset):
-    def __init__(self, csv_path, root_path, augmentation = False, series_id ="", split = True, phase ='train', image_size = (256, 256), n_classes = 6, modality = ['CO', 'DE', 'T2'], n_samples = 500):
+    def __init__(self, csv_path, root_path, augmentation = False, series_id ="", split = True, phase ='train', image_size = (128, 128), n_classes = 6, modality = ['CO', 'DE', 'T2'], n_samples = 500):
         super().__init__( csv_path, root_path, augmentation , series_id, split, phase, image_size, n_classes, modality)
-        self.patch_size=16
-        self.stride =  8 if phase is 'train' else self.patch_size
+        self.patch_size=32
+        self.stride =  16 if phase is 'train' else self.patch_size
 
     def __getitem__(self, idx):
 
@@ -577,6 +579,24 @@ class Test(MyOpsDataset):
         for i, m in enumerate(self.modality):
             key = self.file_names.columns[m]        # key ='img_' + m
             Image.fromarray(image[:, :, i]).save(dir_data.joinpath( self.file_names.iloc[idx][key]) )
+
+
+class MyOpsDatasetAugmentationPatch(MyOpsDatasetPatches):
+    def __init__(self, csv_path, root_path, augmentation = False, series_id ="", split = True, phase ='train', image_size = (128, 128), n_classes = 6, modality = ['CO', 'DE', 'T2'], n_samples = 500):
+        super(MyOpsDatasetAugmentationPatch, self).__init__( csv_path, root_path, augmentation , series_id, split, phase, image_size, n_classes, modality)
+        self.n_samples = n_samples if n_samples != -1 else len(self.file_names)
+        self.sample = self.n_samples *  [None]
+        # idx = np.arange(n_samples)
+        for i in np.arange(self.n_samples):
+            self.sample[i] = super().__getitem__(i % len(self.file_names))
+            if i % len(self.file_names)+1 == 0:
+                super().set_augmentation(True)
+
+    def __len__(self):
+        return self.n_samples
+
+    def __getitem__(self, idx):
+        return self.sample[idx]
 
 
 if __name__ == "__main__":

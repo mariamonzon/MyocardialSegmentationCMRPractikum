@@ -19,7 +19,7 @@ from model.dilated_unet import Segmentation_model, Branched_model
 from model.lr_finder import LRFinder
 from utils.callbacks import EarlyStoppingCallback, ModelCheckPointCallback
 from utils.metric import dice, dice_coefficient_multiclass
-from dataset import MyOpsDataset, MyOpsDatasetPatches
+from dataset import MyOpsDataset, MyOpsDatasetPatches, MyOpsDatasetAugmentationPatch
 from torch.utils.data import  DataLoader
 from pathlib import Path
 
@@ -39,8 +39,8 @@ class TrainerBranched:
                  n_classes = 2,
                  lr= 0.0001,
                  apply_scheduler=True,  # learning rates
-                 transform=False,
-                 augmentation=False,
+                 transform=True,
+                 augmentation=True,
                  model_name='unet_model_checkpoint.pth.tar',
                  model_dir = '/weights/',
                  modality = ['CO', 'DE', 'T2']):
@@ -71,13 +71,14 @@ class TrainerBranched:
         self.loss_logs = { 'train_loss': [], 'train_dice' : [], 'val_loss': [], 'val_dice' : []}
 
         # Set the datasets
-        self.train_dataset = MyOpsDatasetPatches(self.train_path, data_dir, augmentation=  transform,
+        self.train_dataset = MyOpsDatasetAugmentationPatch(self.train_path, data_dir, augmentation=  transform,
                                           series_id=IDs.astype(str),
                                           split= True,
                                           phase = 'train',
                                           image_size = (self.WIDTH, self.HEIGHT),
                                           n_classes=n_classes,
-                                          modality = modality)
+                                          modality = modality,
+                                          n_samples = 1000)
         train_params = {'batch_size': batch_size, 'shuffle': True} #, 'num_workers': 4}
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
         self.val_dataloader = DataLoader( MyOpsDatasetPatches(self.val_path, data_dir,
@@ -123,6 +124,8 @@ class TrainerBranched:
             l = self.loss(output_scar, mask)
             l_bin = self.loss_bin(output_edema, mask_bin)  # loss =  self.loss(output , mask)
             loss = l + l_bin
+            loss.backward()
+            self.optim.step()
             loss_meter.update(loss.item())
             output_mask = one_hot_mask(output_scar, channel_axis=1)
             l_scar = dice_coefficient_multiclass(output_mask, mask).item()
@@ -137,7 +140,7 @@ class TrainerBranched:
         train_loss = loss_meter.get_avg_loss()
         self.loss_logs['train_loss'].append( loss_meter.get_avg_loss())
         self.loss_logs['train_dice'].append(dice_metric.get_avg_loss()+dice_edema.get_avg_loss())
-        print('Epoch: [{0}]\t\t' 'Mean Train Loss:   {1:.5f} \t   Dice scar:  {2:.5f} \t   Dice scar+edema:  {2:.5f}\n'.format(epoch, train_loss,  dice_metric.get_avg_loss(), dice_edema.get_avg_loss()))
+        print('Epoch: [{0}]\t\t' 'Mean Train Loss:   {1:.5f} \t   Dice scar:  {2:.5f} \t   Dice scar+edema:  {3:.5f}\n'.format(epoch, train_loss,  dice_metric.get_avg_loss(), dice_edema.get_avg_loss()))
         torch.cuda.empty_cache()
         return train_loss
 
@@ -248,7 +251,7 @@ if __name__ == '__main__':
         comments = "branched_unet_lr_{}_{}".format( args.lr, args.n_filter)
         if args.augmentation:
             comments += "_augmentation"
-        comments += "_crop_image_surface_loss_{}".format(alpha)
+        comments += "_crop_image_dice_loss"
         comments += "_classes_{}".format( args.n_class)
         comments += '_' + '-'.join(MODALITY)
         comments += "_fold_{}".format(i)
