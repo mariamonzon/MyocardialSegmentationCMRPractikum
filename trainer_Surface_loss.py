@@ -70,7 +70,7 @@ class TrainerDistanceLoss:
         self.loss_logs = { 'train_loss': [], 'train_dice' : [], 'val_loss': [], 'val_dice' : []}
 
         # Set the datasets
-        self.train_dataset = MyOpsDataset(self.train_path, data_dir, augmentation=  transform,
+        self.train_dataset = MyOpsDatasetAugmentation(self.train_path, data_dir, augmentation=  transform,
                                           series_id=IDs.astype(str),
                                           split= True,
                                           phase = 'train',
@@ -203,14 +203,14 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.0001)
-    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=100)
-    parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default=False)
+    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=150)
+    parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default=True)
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default= False)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=-1)
     parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
-    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=5)
+    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=2)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
-    parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=4)
+    parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=2)
     parser.add_argument("-pt", "--pretrained", help="whether to train from scratch or resume", action="store_true",
                         default=False)
     parser.add_argument("-lr_find",  help="Run a pretraining to save the optimal lr", type=bool, default=False)
@@ -233,7 +233,7 @@ if __name__ == '__main__':
         train_id = IDS[~np.in1d( IDS, valid_id)]
 
         # calculate the comments
-        comments = "segmentation_unet_lr_{}_{}".format( args.lr, args.n_filter)
+        comments = "myo_segmentation_unet_lr_{}_{}".format( args.lr, args.n_filter)
         if args.augmentation:
             comments += "_augmentation"
         comments += "_crop_image_surface_loss_{}".format(alpha)
@@ -248,12 +248,13 @@ if __name__ == '__main__':
                                         bottleneck_depth=4,
                                         n_class=args.n_class
                                    )
+
         if args.pretrained:
             model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pt'.format(comments)))
 
         train_obj = TrainerDistanceLoss(model,
-                                        train_path="./input/filenames.csv",
-                                        data_dir = r"./input/resampled_input_crop_128/",
+                                        train_path=r"./input/images_masks_modalities.csv",
+                                        data_dir = r"./input/original_crop_128/",
                                         IDs=train_id,
                                         valid_id=valid_id,
                                         width=  128,

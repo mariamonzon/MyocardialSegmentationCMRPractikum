@@ -202,12 +202,12 @@ class TrainerDistanceLoss:
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.0001)
-    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=100)
+    parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.00001)
+    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=200)
     parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default=False)
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default= False)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=-1)
-    parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
+    parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=8)
     parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=5)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
     parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=4)
@@ -222,7 +222,7 @@ if __name__ == '__main__':
     print(config_info)
 
     MR = [['multi'], ['CO'], ['DE'], ['T2'], ['CO', 'DE', 'T2']]
-    alpha = 0.01
+    alpha = 0.1
     # torch.cuda.current_device()
     CV = 5
     CV_dice = CV*[None]

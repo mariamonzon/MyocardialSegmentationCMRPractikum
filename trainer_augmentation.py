@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import argparse
 from utils.utils import one_hot_mask
-from utils.loss import DiceCoefMultilabelLoss, LossMeter, DiceLoss
+from utils.loss import DiceCoefMultilabelLoss, LossMeter, DiceLoss, DiceSurfaceLoss
 from model.dilated_unet import Segmentation_model
 from model.lr_finder import LRFinder
 from utils.callbacks import EarlyStoppingCallback, ModelCheckPointCallback
@@ -23,7 +23,7 @@ from torch.utils.data import  DataLoader
 from pathlib import Path
 
 
-class Trainer:
+class TrainerAugmentation:
     def __init__(self, model,
                  train_path="./input/images_masks_full.csv",
                  data_dir = "./input/",
@@ -35,8 +35,8 @@ class Trainer:
                  batch_size=4,
                  n_epoch = 500,
                  gpu = True,
-                 loss = DiceLoss(n_classes=6),
-                 n_classes = 6,
+                 loss = DiceSurfaceLoss(n_classes=5),
+                 n_classes = 5,
                  lr= 0.00001,
                  apply_scheduler=True,  # learning rates
                  transform=False,
@@ -206,18 +206,18 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.0001)
-    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=300)
+    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=200)
     parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default=False)
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default=True)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=500)
     parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
-    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=6)
+    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=5)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
     parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=4)
     parser.add_argument("-pt", "--pretrained", help="whether to train from scratch or resume", action="store_true",
                         default=False)
     parser.add_argument("-lr_find",  help="Run a pretraining to save the optimal lr", type=bool, default=False)
-    parser.add_argument("-mod",  help="MRI modality: 0-all, 1-C0, 2-DE, 3-T2, 4-channelwise", type=int, default=0)
+    parser.add_argument("-mod",  help="MRI modality: 0-all, 1-C0, 2-DE, 3-T2, 4-channelwise", type=int, default=4)
 
     args = parser.parse_args()
 
@@ -227,6 +227,7 @@ if __name__ == '__main__':
     CV = 5
     CV_dice = CV*[None]
     IDS = np.arange(101,126)
+    alpha=0.01
     MODALITY =  MR[args.mod]  # ['CO'] # ['CO', 'DE','T2']  MODALITY = ['CO']['DE']['T2']
     for i in range(CV):
         valid_id = IDS[5*i:5*(i+1)]
@@ -236,6 +237,7 @@ if __name__ == '__main__':
         comments = "segmentation_unet_lr_{}_{}".format( args.lr, args.n_filter)
         if args.augmentation:
             comments += "_augmentation"
+        comments += "_crop_image_dice_loss_"
         comments += "_samples_{}".format(args.n_samples)
         comments = comments + '_' + '-'.join(MODALITY)
         comments += "_fold_{}".format(i)
@@ -248,15 +250,15 @@ if __name__ == '__main__':
                                         n_class=args.n_class
                                    )
         if args.pretrained:
-            model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pt'.format(comments)))
+            model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pth.tar'.format(comments)))
 
-        train_obj = Trainer(model,
+        train_obj = TrainerAugmentation(model,
                             train_path="./input/images_masks_modalities.csv",
-                            data_dir = "./input/",
+                            data_dir = "./input/original_crop_128",
                             IDs=train_id,
                             valid_id=valid_id,
-                            width=  256,
-                            height= 256,
+                            width=  128,
+                            height= 128,
                             batch_size= args.batch_size,  # 8
                             loss= DiceLoss(n_classes=args.n_class),
                             n_classes =args.n_class,
@@ -270,7 +272,7 @@ if __name__ == '__main__':
                             )
 
         if args.lr_find:
-            Trainer.find_learning_rate()
+            TrainerAugmentation.find_learning_rate()
             print("The learning rate finder has finished ", valid_id)
             exit(0)
 

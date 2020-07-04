@@ -150,13 +150,12 @@ def crop_volume(vol, crop_size=112):
     :param vol:
     :return:
     """
-
     return np.array(vol[:,
                     int(vol.shape[1] / 2) - crop_size: int(vol.shape[1] / 2) + crop_size,
                     int(vol.shape[2] / 2) - crop_size: int(vol.shape[2] / 2) + crop_size,: ])
 
 
-def reconstuct_volume(vol, img_shape, crop_size=112):
+def reconstuct_volume(vol, img_shape, crop_size=128):
     """
     :param vol:
     :return:
@@ -185,11 +184,11 @@ def read_img(pat_id, img_len, folder =r'./input/train/' ,type='C0'):
     for im in range(img_len):
         # img = MyOpsDataset.PIL_loader(r'./input/processed/train/myops_training_{}_{}_{}.png'.format(pat_id, type, im))
         if type  == 'C0' or type == 'DE'  or type == 'T2':
-            img = cv2.imread(folder  + r'/myops_training_{}_{}_{}.png'.format(pat_id, type, im))
+            img = cv2.imread(folder  + r'/myops_test_{}_{}_{}.png'.format(pat_id, type, im))
         else:
-            img =       cv2.imread(folder  +r'/myops_training_{}_C0_{}.png'.format(pat_id,  im))
-            img[:,:,1] = cv2.imread(folder  +r'/myops_training_{}_DE_{}.png'.format(pat_id,  im), cv2.IMREAD_GRAYSCALE)
-            img[:,:,2] = cv2.imread(folder  +r'/myops_training_{}_T2_{}.png'.format(pat_id,  im), cv2.IMREAD_GRAYSCALE)
+            img =       cv2.imread(folder  + r'/myops_test_{}_C0_{}.png'.format(pat_id,  im))
+            img[:,:,1] = cv2.imread(folder  +r'/myops_test_{}_DE_{}.png'.format(pat_id,  im), cv2.IMREAD_GRAYSCALE)
+            img[:,:,2] = cv2.imread(folder  +r'/myops_test_{}_T2_{}.png'.format(pat_id,  im), cv2.IMREAD_GRAYSCALE)
 
         images.append(img)
     return np.array(images)
@@ -206,11 +205,11 @@ def evaluate_segmentation(fold=0,   device = 'cpu', model_name = 'unet', mod = '
     metrics = []
     with torch.no_grad():
         for pat_id in ids:
-            test_path = sorted(glob("input/raw/train/myops_training_{}_{}.nii.gz".format(pat_id, 'C0')))
-            mask_path = sorted(glob("input/raw/masks/myops_training_{}_gd.nii.gz".format(pat_id)))
-            for imgPath, mskPath in zip(test_path, mask_path):
-                nimg, affine, header = load_nii(mskPath)
-                # print(nimg.shape)
+            test_path = sorted(glob("input/test/myops_training_{}_{}.nii.gz".format(pat_id, 'C0')))
+            # mask_path = sorted(glob("input/raw/masks/myops_training_{}_gd.nii.gz".format(pat_id)))
+            for imgPath in test_path:
+                nimg, affine, header = load_nii(test_path)
+
                 vol_resize = read_img(pat_id, nimg.shape[2], mod)
                 x_batch = np.array(vol_resize, np.float32) / 255.
                 x_batch = resize(x_batch, (nimg.shape[2], 256,256, 3), anti_aliasing=True)
@@ -269,9 +268,10 @@ if __name__ == '__main__':
 
         device = 'gpu' if args.gpu else 'cpu'
         unet_model.to(device)
-        mod = 'C0' #'CO-DE-T2'
+        mod = 'CO-DE-T2'
         # model_name ='segmentation_unet_lr_0.001_32_{}_fold_{}'.format( mod, fold)
-        model_name ='segmentation_unet_lr_0.0001_32_crop_image_surface_loss_01_classes_5_{}_fold_{}'.format( mod, fold)
+        model_name ='localization_unet_lr_0.0001_32_augmentation_surface_loss_01_samples_-1_classes_2_CO-DE-T2_fold_{}'.format(fold)
+        mod = model_name.split('_')[-3].split('-')
         unet_model.load_state_dict(torch.load('./weigths/{}/unet_model_checkpoint.pth.tar'.format(model_name)))
 
         print("model loaded:  ", model_name)

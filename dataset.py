@@ -124,7 +124,7 @@ class MyOpsDataset(Dataset):
         elif self.num_classes == 3:
             sample['mask'] = self.categorical_maks_labels(sample['mask'])
         elif self.num_classes == 4:
-            sample['mask'] = self.categorical_maks_labels( sample['mask'])
+            sample['mask'] = self.categorical_maks_labels( sample['mask'], labels= [1,2,4])
         elif self.num_classes == 5:
             sample['mask'] = self.categorical_maks_labels(sample['mask'], labels=[1,2,4,5])
         else:
@@ -358,12 +358,12 @@ class MyOpsDataset(Dataset):
             original_mask = np.load(mask_path)
             bin_mask = self.binary_mask(original_mask )
             regions = regionprops(bin_mask[1].astype(int))
-            center = regions[0].centroid
-            #  bbox = regions[0].bbox
-            dir_data = make_directory(self.root_dir, 'train_crop_128_128_GT/')
-            dir_mask = make_directory(self.root_dir, 'masks_crop_128_128_GT/')
-            image = self.crop_images(image, center, window=64)
-            original_mask = self.crop_images(original_mask, center, window=64)
+            #center = regions[0].centroid
+            bbox = regions[0].bbox
+            dir_data = make_directory(self.root_dir, 'train_crop_bbox/')
+            dir_mask = make_directory(self.root_dir, 'masks_crop_bbox/')
+            image = self.crop_bbox(image, bbox, pad=5)
+            original_mask = self.crop_bbox(original_mask, bbox, pad=5)
 
             for i, m in enumerate(self.modality):
                 key = self.file_names.columns[m]  # key ='img_' + m
@@ -571,10 +571,10 @@ class Test(MyOpsDataset):
 
         mask = cv2.resize(mask, image.shape[:2])
         regions = regionprops(mask.astype(int))
-        center = regions[0].centroid
-        #  bbox = regions[0].bbox
-        dir_data = make_directory(self.root_dir , 'test_crop_128_128/')
-        image = self.crop_images(image,center, window=64)
+        # center = regions[0].centroid
+        bbox = regions[0].bbox
+        dir_data = make_directory(self.root_dir , 'test_crop_bbox/')
+        image = self.crop_bbox(image, bbox, pad=5)# self.crop_images(image,center, window=64)
 
         for i, m in enumerate(self.modality):
             key = self.file_names.columns[m]        # key ='img_' + m
@@ -600,21 +600,20 @@ class MyOpsDatasetAugmentationPatch(MyOpsDatasetPatches):
 
 
 if __name__ == "__main__":
-    # folder_path = r"./input/test_orig"
-    # modalities = ['C0', 'DE', 'T2']
-    # files = pd.DataFrame(columns=modalities + ['mask'])
-    # for m in modalities:
-    #     files[str(m)] = [p.relative_to(folder_path) for p in Path(folder_path).glob('*_' + m + '_*.png')]
-    #
-    # files.to_csv('./input/test_orig/test_filenames.csv', sep=';')
-    # exit(0)
+    #folder_path = r"./input/test_orig"
+    #modalities = ['C0', 'DE', 'T2']
+    #files = pd.DataFrame(columns=modalities + ['mask'])
+    #for m in modalities:
+    #    files[str(m)] = [p.relative_to(folder_path) for p in Path(folder_path).glob('*_' + m + '_*.png')]
+    #    files.to_csv('./input/test_orig/test_filenames.csv', sep=';')
+    #exit(0)
     from glob import  iglob
     n_clas = 1
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
     # dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id=np.arange(101, 110).astype(str),  n_classes= n_clas , modality=['CO', 'DE', 'T2'],n_samples =500)
-    dataset = MyOpsDatasetPatches("./input/images_masks_modalities.csv", "./input/original_crop_128", series_id= np.arange(101,126).astype(str), n_classes= 2,  modality=['CO', 'DE', 'T2'])
-    # dataset.crop_gt()
+    dataset = MyOpsDataset("./input/images_masks_modalities.csv", "./input/original", series_id= np.arange(101,126).astype(str), n_classes= 5,  modality=['CO', 'DE', 'T2'])
+    dataset.crop_gt()
     for idx in range(15, 20):
         sample = dataset.__getitem__(idx)
         mask = sample['heatmaps']

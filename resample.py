@@ -29,7 +29,6 @@ def convert_to_one_hot(seg):
 
 def preprocess_image(image, spacing, is_seg=False, spacing_target=(1, 0.5, 0.5), keep_z_spacing=False):
 
-
     if not is_seg:
         order_img = 1
         image = resize_image(image, spacing, spacing_target, order=order_img).astype(np.float32)

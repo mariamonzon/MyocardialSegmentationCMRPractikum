@@ -35,7 +35,7 @@ class Trainer:
                  batch_size=4,
                  n_epoch=200,
                  gpu = True,
-                 loss = DiceCoefMultilabelLoss(numLabels=6),
+                 loss = DiceLoss(numLabels=2),
                  n_classes = 6,
                  lr= 0.001,
                  apply_scheduler=True,  # learning rates
@@ -114,7 +114,7 @@ class Trainer:
         # pid = os.getpid()
 
         for iter, data in enumerate(self.train_dataloader):
-            image , mask = data['image'].to(self.device), data['mask'].to(self.device)
+            image , mask = torch.squeeze(data['image'],dim=0).to(self.device),torch.squeeze(data['mask'],dim=0).to(self.device)
             self.optim.zero_grad()
             output = self.net(image)
             output_probs = nn.Softmax2d()(output)

@@ -74,7 +74,7 @@ class TrainerLocalization:
         # Set the datasets
         self.train_dataset = MyOpsDatasetAugmentation(self.train_path, data_dir, augmentation=  transform,
                                           series_id=IDs.astype(str),
-                                          split= True,
+                                          split= False,
                                           phase = 'train',
                                           image_size = (self.WIDTH, self.HEIGHT),
                                           n_classes=n_classes,
@@ -206,9 +206,9 @@ class TrainerLocalization:
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.001)
-    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=125)
-    parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default=False)
+    parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.0001)
+    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=250)
+    parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default= True)
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default=True)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default= -1)
     parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
@@ -230,6 +230,7 @@ if __name__ == '__main__':
     CV_dice = CV*[None]
     IDS = np.arange(101,126)
     MODALITY =  MR[args.mod]  # ['CO'] # ['CO', 'DE','T2']  MODALITY = ['CO']['DE']['T2']
+
     for i in range(1):
         valid_id = IDS[5*i:5*(i+1)]
         train_id = IDS[~np.in1d( IDS, valid_id)]
@@ -240,8 +241,9 @@ if __name__ == '__main__':
             comments += "_augmentation"
         comments += "_surface_loss_01"
         comments += "_samples_{}".format(args.n_samples)
+        comments += "_classes_{}".format(args.n_class)
         comments += '_' + '-'.join(MODALITY)
-        comments += "_fold_{}".format(i)
+        comments += "_fold_{}".format('all')
         print(comments)
 
         model = Segmentation_model(filters=args.n_filter,
@@ -254,8 +256,8 @@ if __name__ == '__main__':
             model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pt'.format(comments)))
 
         train_obj = TrainerLocalization(model,
-                                        train_path="./input/filenames.csv",
-                                        data_dir = "./input/",
+                                        train_path="./input/images_masks_modalities.csv",
+                                        data_dir = "./input/original",
                                         IDs=train_id,
                                         valid_id=valid_id,
                                         width=  256,
@@ -269,8 +271,7 @@ if __name__ == '__main__':
                                         model_name= 'unet_model_checkpoint.pth.tar',
                                         model_dir = './weights/{}/'.format(comments),
                                         modality=MODALITY,
-                                        n_samples=args.n_samples
-                                        )
+                                        n_samples=args.n_samples )
 
         print("The validation IDs are ", valid_id)
         # Train the models

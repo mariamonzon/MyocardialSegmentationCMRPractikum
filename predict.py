@@ -12,6 +12,7 @@ from utils.loss import DiceCoefMultilabelLoss, LossMeter
 from utils.utils import one_hot_mask, categorical_mask2image
 from utils.save_data import make_directory
 from model.dilated_unet import Segmentation_model
+from model.ENet import Enet
 from utils.metric import dice_coefficient_multiclass, dice
 import torch
 import torch.nn as nn
@@ -34,16 +35,16 @@ def predict_model(dataset, model, device ='cpu', save_images= True, dir_name =""
             image = data['image'].to(device)  # Input images
             mask =  data['mask'].to(device)
             distance_map =  data['distance_map'].to(device)
-            output = model(image, features_out=False)
+            output = model(image)
             # Get output probability maps
             output_probs = nn.Softmax2d()(output)
             output_masks = one_hot_mask(output_probs ,  channel_axis=1)
             # dataset.save_crop_images(categorical_mask2image(output_masks)[0] , d)
             # output_masks[0]  = torch.from_numpy( keep_largest_connected_components(output_masks.cpu().numpy()[0] ))
             dice_accuracy = dice_coefficient_multiclass(output_masks, mask).item()
-            scar_dice = dice(output_masks[:,-2], mask[:,-2]).item()
+            # scar_dice = dice(output_masks[:,-2], mask[:,-2]).item()
             edema_dice = dice(output_masks[:, -1], mask[:, -1]).item()
-            print("Image [{0}]:  \t Dice score {1:3f}".format(d, dice_accuracy))
+            print("Image [{0}]:  \t Dice score {1:3f} \t Dice Myo {2:3f} \t Dice edema: {3:3f}".format(d, dice_accuracy, 0 , edema_dice) )
             dice_metric[d] =  dice_accuracy
             if save_images:
                 save_output_image(image, output_masks, mask, d, dice=dice_accuracy, dir_name =dir_name)
@@ -62,7 +63,7 @@ def save_output_image(image, output, mask, id, dice = None, dir_name ='./results
     plt.axis('off')
 
     f.add_subplot(1, 3, 2)
-    plt.imshow( output_image , cmap='jet'),
+    plt.imshow( output_image , cmap='jet')
     plt.title('Prediction Mask')
     if dice is not None:
         plt.xlabel('Dice: {0:.5f}'.format(dice))
@@ -120,15 +121,17 @@ if __name__ == '__main__':
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
 
-    name_folder = 'segmentation_unet_lr_0.0001_32_crop_image_surface_loss_0.01_classes_5_CO-DE-T2'
-
+    name_folder = 'heatmaps_unet_lr_0.0001_32_augmentation_surface_loss_01_classes_1_CO-DE-T2'
+    args.n_filter = int(name_folder.split('_')[4])
     args.n_class = int(name_folder.split('_')[-2])
     modality = name_folder.split('_')[-1].split('-')
-    model = Segmentation_model(filters=args.n_filter,
-                                    in_channels=3,
-                                    n_block=args.n_block,
-                                    bottleneck_depth=4,
-                                    n_class=args.n_class)
+    # model = Segmentation_model(filters=args.n_filter,
+    #                                 in_channels=3,
+    #                                 n_block=args.n_block,
+    #                                 bottleneck_depth=4,
+    #                                 n_class=args.n_class)
+
+    model = Enet(num_classes = args.n_class)
     # modality = ['multi']
     for FOLD in range(0,5):
         model_name = name_folder + '_fold_{}'.format(FOLD) #args.model_name
@@ -136,7 +139,7 @@ if __name__ == '__main__':
         #['CO'] [, 'DE', 'T2']
         print(model_name)
 
-        model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pth.tar'.format(model_name)))
+        model.load_state_dict(torch.load('./weights/{}/enet_model_checkpoint.pth.tar'.format(model_name)))
 
         test_set= "original_crop_128"
         valid_id = np.arange(101,126)[5 * FOLD:5 * (FOLD + 1)]
@@ -144,7 +147,7 @@ if __name__ == '__main__':
                                               split= True,
                                               series_id= valid_id.astype(str),
                                               phase = 'valid',
-                                              image_size =  (128, 128),
+                                              image_size =  (128,128),
                                               n_classes=args.n_class,
                                               modality = modality, crop_center=0)
 
