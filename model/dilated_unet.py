@@ -138,6 +138,35 @@ class Segmentation_model(nn.Module):
             print('model plotted')
 
 
+class Branched_model(nn.Module):
+    def __init__(self, filters=32, in_channels=3, n_block=4, bottleneck_depth=4, n_class=4):
+        super().__init__()
+        self.encoder = Encoder(filters=filters, in_channels=in_channels, n_block=n_block)
+        self.bottleneck = Bottleneck(filters=filters, n_block=n_block, depth=bottleneck_depth)
+        self.decoder = Decoder(filters=filters, n_block=n_block)
+        self.decoder2  = Decoder(filters=filters, n_block=n_block)
+        self.classifier = nn.Conv2d(in_channels=filters, out_channels=n_class, kernel_size=(1, 1))
+        self.classifier_bin = nn.Conv2d(in_channels=filters, out_channels=2, kernel_size=(1, 1))
+
+    def forward(self, x, features_out=False):
+        output, skip = self.encoder(x)
+        output_bottleneck = self.bottleneck(output)
+        output_2 = output_bottleneck.clone()
+        # Branch 1
+        output2 = self.decoder(output_2, skip.copy())
+        output2 = self.classifier_bin(output2)
+        # Branch 2
+        output4 = self.decoder2(output_bottleneck, skip)
+        output4 = self.classifier(output4)
+        return output2, output4
+
+    @staticmethod
+    def plot_model(model, x):
+        with SummaryWriter('graph') as writer:
+            writer.add_graph(model, x)
+            print('model plotted')
+
+
 class Ensemble_model(nn.Module):
     def __init__(self, filters=32, in_channels=3, n_block=4, bottleneck_depth=4, n_class=6):
         super().__init__()
@@ -156,10 +185,11 @@ class Ensemble_model(nn.Module):
         return out1 + out2 + out3
 
 if __name__ == '__main__':
-    model = Ensemble_model(filters=64, n_block=4)
+    model = Branched_model(filters=64, n_block=4)
     x = rand(2, 3, 256 , 256)
-    output = model(x)
-
+    output_2, output_4= model(x)
+    print(output_2.shape)
+    print(output_4.shape)
     print("finish")
-    input()
+
 
