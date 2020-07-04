@@ -146,7 +146,7 @@ class Branched_model(nn.Module):
         self.decoder = Decoder(filters=filters, n_block=n_block)
         self.decoder2  = Decoder(filters=filters, n_block=n_block)
         self.classifier = nn.Conv2d(in_channels=filters, out_channels=n_class, kernel_size=(1, 1))
-        self.classifier_bin = nn.Conv2d(in_channels=filters, out_channels=2, kernel_size=(1, 1))
+        self.classifier2 = nn.Conv2d(in_channels=filters, out_channels=2, kernel_size=(1, 1))
 
     def forward(self, x, features_out=False):
         output, skip = self.encoder(x)
@@ -154,7 +154,7 @@ class Branched_model(nn.Module):
         output_2 = output_bottleneck.clone()
         # Branch 1
         output2 = self.decoder(output_2, skip.copy())
-        output2 = self.classifier_bin(output2)
+        output2 = self.classifier2(output2)
         # Branch 2
         output4 = self.decoder2(output_bottleneck, skip)
         output4 = self.classifier(output4)

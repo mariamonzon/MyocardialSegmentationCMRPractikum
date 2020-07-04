@@ -44,6 +44,26 @@ from PIL import Image
 from pathlib import Path
 
 
+def extract_nrrd_data(PATH=r"/human-dataset", CLAHE = False):
+    # import nrrd
+    from glob import  iglob
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+    for p in iglob(PATH+str('/*de.nrrd')):
+        id = 126
+        dir_path =Path( str(p).split('_')[0])
+        # Create Directory
+        dir_path.mkdir(parents=True, exist_ok = True)
+        images = nrrd.read(p)[0]
+        for i in range(images.shape[-1]):
+            img = images[:,:,i]
+            img = (255 * (img- img.min()) / (img.max() - img.min())).astype(np.uint8)
+            if CLAHE:
+                img = clahe.apply(img)
+            img = Image.fromarray(img, mode="L")
+            img.save(dir_path.joinpath('myops_training_{0}_DE_{1}.png'.format(id, str(i).zfill(2))))
+        id+=1
+
+
 
 
 class MyOpsDataset(Dataset):
@@ -72,7 +92,7 @@ class MyOpsDataset(Dataset):
             self.root_dir =  Path(root_path)
         else:
             self.root_dir = Path(__file__).resolve().parent.joinpath(root_path)
-        self.mean, self.std = self.normalization()
+        # self.mean, self.std = self.normalization()
         self.image_size = image_size
         self.phase = phase
         self.num_classes =  n_classes
@@ -98,10 +118,13 @@ class MyOpsDataset(Dataset):
 
         # Get mask with as one-hot mask in each channel [n_clases, image_size[0], image_size[1])
         if self.num_classes ==1 or self.num_classes == 2 :
-            # sample['mask'] = self.binary_mask(sample['mask'])
-            sample['mask'] = self.single_class_mask(sample['mask'])
+            sample['mask'] = self.binary_mask(sample['mask'])
+            # sample['mask'] = self.single_class_mask(sample['mask'])
+            # sample['mask'] = self.categorical_merge_labels( sample['mask'], labels = [1, 4, 5])
         elif self.num_classes == 3:
             sample['mask'] = self.categorical_maks_labels(sample['mask'])
+        elif self.num_classes == 4:
+            sample['mask'] = self.categorical_maks_labels( sample['mask'])
         elif self.num_classes == 5:
             sample['mask'] = self.categorical_maks_labels(sample['mask'], labels=[1,2,4,5])
         else:
@@ -149,7 +172,7 @@ class MyOpsDataset(Dataset):
         mod = []
         if modality != ['multi']:
             for m in modality:
-                mod.append(self.MODALITIES.get(m, None))
+                mod.append(self.MODALITIES.get(m, 0))
         return mod
     @property
     def filename(self, idx):
@@ -209,51 +232,6 @@ class MyOpsDataset(Dataset):
                          # ToTensor(num_classes=self.num_classes-1)]
         return augmentation
 
-
-    def set_offline_transform(self, prob = 0.5, image_size =(256, 256), data_augmentation= True, **params): # **kwargs
-        # Get the configuration parameters for augmentation
-        rotation = params.get('rotation', True)
-        crop = params.get('crop', True)
-        noise = params.get('noise', False)
-        clahe = params.get('clahe', True)
-        contrast = params.get(' contrast ', True)
-        blur = params.get('blur', False)
-        distorsion = params.get('distorsion', False)
-        augmentation = []
-
-        if data_augmentation and self.phase is 'train':
-            if rotation:
-                augmentation += OneOf([  Rotate(limit=45, interpolation=cv2.INTER_LANCZOS4 ),
-                                         VerticalFlip(),
-                                         HorizontalFlip(),
-                                         RandomRotate90(),
-                                         Transpose(),
-                                         ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=45, interpolation=cv2.INTER_LANCZOS4)
-                                        ], p = prob)
-            if crop:
-                augmentation += OneOf([ RandomCrop( int(image_size[0]*0.875), int(image_size[1]*0.875)),
-                                        CenterCrop(int(image_size[0]*0.875), int(image_size[1]*0.875) ),
-                                        # RandomSizedCrop( (int(image_size[0]*0.875), int(image_size[1]*0.875)), image_size[0], image_size[1], interpolation=cv2.INTER_LANCZOS4)
-                                        ], p=prob)
-            if contrast :
-                augmentation += OneOf([RandomBrightnessContrast(),   RandomGamma()], p = prob )
-            if noise:
-                augmentation += [GaussNoise(p=.5, var_limit=1.)]
-            if distorsion:
-                augmentation +=  OneOf([ GridDistortion(p=.1),
-                                        ElasticTransform(p=.5, sigma=1., alpha_affine=20, border_mode=0)
-                                        ], p=prob)
-            if blur:
-                augmentation +=  OneOf([  MotionBlur(p=.3),
-                                          Blur(blur_limit=3, p=.3),
-                                          GaussianBlur(blur_limit=3, p=.3)
-                                        ], p=prob)
-            if clahe:
-                augmentation += [CLAHE(p=0.6, always_apply=True)]
-        augmentation += [Resize(image_size[0], image_size[1], cv2.INTER_LANCZOS4)]
-                         # Normalize(mean=(self.mean), std=(self.std), max_pixel_value=255.0, always_apply=True, p=1.0),
-                         # ToTensor(num_classes=self.num_classes-1)]
-        return augmentation
 
     def save_check_data(self, **kwargs):
         """ For debugging purposes """
@@ -324,6 +302,18 @@ class MyOpsDataset(Dataset):
             channel_mask[n] = (mask == c)
         # Set the rest of the classes as background
         channel_mask[0] = (channel_mask !=  1).astype(float).sum(axis=0)
+
+        return channel_mask
+
+    def categorical_merge_labels(self, mask: np.ndarray, labels=[2, 4, 5]):
+        """Converts a class vector to binary class matrix."""
+        num_classes = self.num_classes
+        channel_mask = np.zeros((num_classes,) + mask.shape).astype(np.float32)
+        channel_mask[-1] =  (mask ==  labels[0]) | (mask ==  labels[1])
+        #for  c in zip(range(1, num_classes-1)):
+        #   channel_mask[c] = (mask == c)
+        # Set the rest of the classes as background
+        channel_mask[0] = (channel_mask != 1).copy().astype(float).sum(axis=0)
 
         return channel_mask
 
@@ -442,36 +432,63 @@ class MyOpsDataset(Dataset):
         tyr = min(int(center[1] + window), int(image.shape[1]))
 
         image = image[txl:txr , tyl:tyr ]
-
         return image
+
+
     @staticmethod
     def create_csv( folder_path, mask_path):
         modalities  = ['C0', 'DE', 'T2']
         files = pd.DataFrame(columns=modalities+['mask'])
         for m in modalities:
             files[str(m)]=  [p.relative_to(folder_path) for p in Path(folder_path).glob('*_'+m+'_*.png')]
-
         files['mask'] = [pm.relative_to(mask_path) for pm in Path(mask_path).glob('*_'+'C0'+'_*.npy')]
         files.to_csv('./input/filenames.csv', sep=';')
 
-def extract_nrrd_data(PATH=r"/human-dataset", CLAHE = False):
-    # import nrrd
-    from glob import  iglob
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
-    for p in iglob(PATH+str('/*de.nrrd')):
-        id = 126
-        dir_path =Path( str(p).split('_')[0])
-        # Create Directory
-        dir_path.mkdir(parents=True, exist_ok = True)
-        images = nrrd.read(p)[0]
-        for i in range(images.shape[-1]):
-            img = images[:,:,i]
-            img = (255 * (img- img.min()) / (img.max() - img.min())).astype(np.uint8)
-            if CLAHE:
-                img = clahe.apply(img)
-            img = Image.fromarray(img, mode="L")
-            img.save(dir_path.joinpath('myops_training_{0}_DE_{1}.png'.format(id, str(i).zfill(2))))
-        id+=1
+
+
+class MyOpsDatasetHeatmaps(MyOpsDataset):
+    def __init__(self, csv_path, root_path, augmentation=False, series_id="", split=True, phase='train',
+                 image_size=(256, 256), n_classes=6, modality=['CO', 'DE', 'T2']):
+        super().__init__(csv_path, root_path, augmentation, series_id, split, phase, image_size, n_classes, modality)
+
+    def __getitem__(self, idx):
+        image = self.load_image(idx)
+        mask = np.load(Path(self.root_dir).joinpath('masks/' + self.file_names.iloc[idx]['mask']))
+        sample = Compose(self.transforms)(image=image, mask=mask)
+        sample['mask'] = self.binary_mask(sample['mask'])
+        center =  regionprops(sample['mask'][1].astype(int))[0].centroid # self.find_center(self.binary_mask(mask)[1], label=1)
+        sample['heatmaps'] = self.gaussian2d( center,(32,32), self.image_size, amplitude= 1, offset=0, normalize=False)
+        sample['landmark'] = center[::-1]
+        # Get distance maps for Boundary loss
+        sample = self.ToTensor(sample)
+        return sample
+
+    @staticmethod
+    def gaussian2d( centroid, sigma=(32,32), image_size=(256,256), amplitude = 1, offset=0, normalize=False):
+        r"""Create the Net2D Gaussian for the given coordinates by pos_tupel
+        math::
+        \begin{equation}
+            G(x,y) = A \exp\left(- \left(a(x - x_o)^2 + 2b(x-x_o)(y-y_o) + c(y-y_o)^2 \right)\right) + Offset
+        \end{equation}
+        """
+        # Simple Gaussian Coefficients
+        # (x, y) = xy_grid
+        (xo, yo) = centroid
+        (sigma_x, sigma_y) = sigma
+        x,y = torch.meshgrid(torch.arange(0, image_size[0]).float() , torch.arange(0, image_size[1]).float())
+        x_fac = 1/ (2 * sigma_x ** 2)
+        y_fac = 1 / (2 * sigma_y ** 2)
+
+        # G = O + A * e ^ -[(x-xo)^2/(2*sig_y^2)  + (y-yo)^2/(2*sig_y^2) ]
+        g = offset + amplitude * torch.exp(- (x_fac * ((x - xo) ** 2)  + y_fac * ((y - yo) ** 2)))
+
+        if normalize:        #Enforce to be a pdf
+            g = g / torch.sum(g)
+        return g
+
+
+    def ToTensor(self, sample):
+        return {'image': torch.from_numpy(np.rollaxis(sample['image'], -1, 0) /255.).float(),'landmark':torch.Tensor(sample['landmark']).float(), 'heatmaps': torch.unsqueeze(sample['heatmaps'].float(), dim=0)}
 
 
 class MyOpsDatasetAugmentation(MyOpsDataset):
@@ -491,28 +508,108 @@ class MyOpsDatasetAugmentation(MyOpsDataset):
     def __getitem__(self, idx):
         return self.sample[idx]
 
+class MyOpsDatasetPatches(MyOpsDataset):
+    def __init__(self, csv_path, root_path, augmentation = False, series_id ="", split = True, phase ='train', image_size = (256, 256), n_classes = 6, modality = ['CO', 'DE', 'T2'], n_samples = 500):
+        super().__init__( csv_path, root_path, augmentation , series_id, split, phase, image_size, n_classes, modality)
+        self.patch_size=16
+        self.stride =  8 if phase is 'train' else self.patch_size
+
+    def __getitem__(self, idx):
+
+        image = self.load_image(idx)
+        # mask = np.array(self.PIL_loader(self.root_dir, 'masks/'+ self.file_names.iloc[idx]['mask']) )
+        mask = np.load(Path(self.root_dir).joinpath('masks/' + self.file_names.iloc[idx]['mask']))
+
+        # HISTOGRAM EQUALIZATION
+        sample = Compose(self.transforms)(image=image, mask=mask)
+
+        sample['scar'] = self.categorical_maks_labels( sample['mask'], labels=[4])
+        sample['edema'] = self.categorical_merge_labels(sample['mask'], labels=[4,5])
+        sample = self.ToTensor(sample)
+
+        image = sample['image']
+        image = image.unfold(-2, self.patch_size, self.stride).unfold(-1,self.patch_size , self.stride)
+        image = image.contiguous().view(image.size(0), -1, self.patch_size,self.patch_size)
+        mask = sample['scar']
+        mask = mask.unfold(-2, self.patch_size, self.stride).unfold(-1, self.patch_size, self.stride)
+        mask = mask.contiguous().view(mask.size(0), -1, self.patch_size, self.patch_size)
+        mask2 = sample['edema']
+        mask2 = mask2.unfold(-2, self.patch_size, self.stride).unfold(-1, self.patch_size, self.stride)
+        mask2 = mask2.contiguous().view(mask.size(0), -1, self.patch_size, self.patch_size)
+
+        sample =  {'image': image.transpose(0,1), 'scar':mask.transpose(0,1),'edema':mask2.transpose(0,1)}
+        return sample
+
+    def ToTensor(self, sample):
+        return {'image': torch.from_numpy(np.rollaxis(sample['image'], -1, 0) /255.).float(), 'scar': torch.from_numpy(sample['scar']).float(), 'edema': torch.from_numpy(sample['edema']).float()}
+
+
+class Test(MyOpsDataset):
+    def __init__(self, csv_path, root_path,  image_size=(128, 128), n_classes=6, modality=['CO', 'DE', 'T2']):
+        super().__init__(csv_path, root_path, False, "",  False, "test",  image_size, n_classes, modality)
+
+    def load_image(self,idx ):
+        key = self.file_names.columns[self.modality[0]]
+        image = np.array(self.PIL_loader( self.root_dir , self.file_names.iloc[idx][key], mode='RGB'))
+        if len(self.modality)>1:
+            # key = self.file_names.columns[0]
+            for i, m in enumerate(self.modality):
+                key = self.file_names.columns[m]        # key ='img_' + m
+                image[:,:, i] = np.array(self.PIL_loader( self.root_dir , self.file_names.iloc[idx][ key ], mode='L'))
+        return image
+
+    def __getitem__(self, idx):
+        image = self.load_image(idx)
+        image = Compose(self.transforms)(image = image)
+        return torch.from_numpy(np.rollaxis(image['image'], -1, 0) /255.).float()
+
+
+    def save_crop_images(self, mask, idx):
+        image = self.load_image(idx)
+
+        mask = cv2.resize(mask, image.shape[:2])
+        regions = regionprops(mask.astype(int))
+        center = regions[0].centroid
+        #  bbox = regions[0].bbox
+        dir_data = make_directory(self.root_dir , 'test_crop_128_128/')
+        image = self.crop_images(image,center, window=64)
+
+        for i, m in enumerate(self.modality):
+            key = self.file_names.columns[m]        # key ='img_' + m
+            Image.fromarray(image[:, :, i]).save(dir_data.joinpath( self.file_names.iloc[idx][key]) )
+
 
 if __name__ == "__main__":
+    # folder_path = r"./input/test_orig"
+    # modalities = ['C0', 'DE', 'T2']
+    # files = pd.DataFrame(columns=modalities + ['mask'])
+    # for m in modalities:
+    #     files[str(m)] = [p.relative_to(folder_path) for p in Path(folder_path).glob('*_' + m + '_*.png')]
+    #
+    # files.to_csv('./input/test_orig/test_filenames.csv', sep=';')
+    # exit(0)
     from glob import  iglob
-    n_clas = 2
+    n_clas = 1
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
     # dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id=np.arange(101, 110).astype(str),  n_classes= n_clas , modality=['CO', 'DE', 'T2'],n_samples =500)
-    dataset = MyOpsDataset("./input/images_masks_modalities.csv", "./input/original", series_id= np.arange(101,126).astype(str), n_classes= n_clas,  modality=['CO', 'DE', 'T2'], crop_center=0)
-    dataset.crop_gt()
+    dataset = MyOpsDatasetPatches("./input/images_masks_modalities.csv", "./input/original_crop_128", series_id= np.arange(101,126).astype(str), n_classes= 2,  modality=['CO', 'DE', 'T2'])
+    # dataset.crop_gt()
     for idx in range(15, 20):
         sample = dataset.__getitem__(idx)
-        mask = sample['mask']
+        mask = sample['heatmaps']
         image= sample['image']
         plt.figure()
         plt.imshow(image[0],  cmap='gray')
+        plt.scatter(sample['landmark'][0],sample['landmark'][1])
         plt.figure()
         for i in range( n_clas):
             plt.subplot(2,  int(2*n_clas/4+1), i + 1)
             plt.imshow(mask[i])
+            plt.scatter(sample['landmark'][0], sample['landmark'][1])
             plt.axis('off')
     plt.show()
-
-    dataset.save_check_data()
+    #
+    # dataset.save_check_data()
     params = {'batch_size': 16, 'shuffle': True, 'num_workers': 6}
     dataloader = DataLoader(dataset,**params)
