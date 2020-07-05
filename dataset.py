@@ -366,7 +366,7 @@ class MyOpsDataset(Dataset):
             original_mask = self.crop_bbox(original_mask, bbox, pad=5)
 
             for i, m in enumerate(self.modality):
-                key = self.file_names.columns[m]  # key ='img_' + m
+                key = self.file_names.columns[i]  # key ='img_' + m
                 Image.fromarray(image[:, :, i]).save(dir_data.joinpath(self.file_names.iloc[idx][key]))
                 mask_name = str( self.file_names.iloc[idx]['mask']).replace('C0', mod[m])
                 np.save(dir_mask.joinpath(mask_name), original_mask.astype(np.uint8))
@@ -448,8 +448,11 @@ class MyOpsDataset(Dataset):
 
 class MyOpsDatasetHeatmaps(MyOpsDataset):
     def __init__(self, csv_path, root_path, augmentation=False, series_id="", split=True, phase='train',
-                 image_size=(256, 256), n_classes=6, modality=['CO', 'DE', 'T2']):
+                 image_size=(256, 256), n_classes=1, modality=['CO', 'DE', 'T2'], sd=16):
         super().__init__(csv_path, root_path, augmentation, series_id, split, phase, image_size, n_classes, modality)
+        self.sigma = sd
+        if augmentation:
+            super().set_augmentation(True)
 
     def __getitem__(self, idx):
         image = self.load_image(idx)
@@ -457,11 +460,14 @@ class MyOpsDatasetHeatmaps(MyOpsDataset):
         sample = Compose(self.transforms)(image=image, mask=mask)
         sample['mask'] = self.binary_mask(sample['mask'])
         center =  regionprops(sample['mask'][1].astype(int))[0].centroid # self.find_center(self.binary_mask(mask)[1], label=1)
-        sample['heatmaps'] = self.gaussian2d( center,(32,32), self.image_size, amplitude= 1, offset=0, normalize=False)
+        sample['heatmaps'] = self.gaussian2d( center,(self.sigma,self.sigma), self.image_size, amplitude= 1, offset=0, normalize=False)
         sample['landmark'] = center[::-1]
         # Get distance maps for Boundary loss
         sample = self.ToTensor(sample)
         return sample
+
+    def sigma_reduce(self, s=4):
+        self.sigma -= s
 
     @staticmethod
     def gaussian2d( centroid, sigma=(32,32), image_size=(256,256), amplitude = 1, offset=0, normalize=False):
@@ -612,8 +618,9 @@ if __name__ == "__main__":
     # PATH=r"D:\OneDrive - fau.de\1.Medizintechnik\5SS Praktikum\human-dataset"
     # extract_nrrd_data(PATH=PATH)
     # dataset = MyOpsDatasetAugmentation("./input/images_masks_modalities.csv", "./input", series_id=np.arange(101, 110).astype(str),  n_classes= n_clas , modality=['CO', 'DE', 'T2'],n_samples =500)
-    dataset = MyOpsDataset("./input/images_masks_modalities.csv", "./input/original", series_id= np.arange(101,126).astype(str), n_classes= 5,  modality=['CO', 'DE', 'T2'])
+    dataset = MyOpsDataset("./input/resampled_input/filenames.csv", "./input/resampled_input", series_id= np.arange(101,126).astype(str), n_classes= 5,  modality=['CO', 'DE', 'T2'])
     dataset.crop_gt()
+    exit(0)
     for idx in range(15, 20):
         sample = dataset.__getitem__(idx)
         mask = sample['heatmaps']
