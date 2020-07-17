@@ -9,13 +9,44 @@ import torch
 from medpy.metric.binary import hd, dc, asd
 import nibabel as nib
 from skimage import measure
-from model.dilated_unet import Ensemble_model, Segmentation_model
+from model.dilated_unet import Ensemble_model
 import argparse
 from utils.utils import one_hot_mask, categorical_mask2image
-from utils.utils import make_directory
-from skimage.transform import resize
 from dataset import MyOpsDataset
 import torch.nn as nn
+
+import SimpleITK as sitk
+import os
+from multiprocessing import pool
+from skimage.transform import resize
+import matplotlib.pyplot as plt
+import cv2
+
+
+def resize_image(image, old_spacing, new_spacing, order=3):
+    new_shape = (int(np.round(old_spacing[0]/new_spacing[0]*float(image.shape[0]))),
+                 int(np.round(old_spacing[1]/new_spacing[1]*float(image.shape[1]))),
+                 int(np.round(old_spacing[2]/new_spacing[2]*float(image.shape[2]))))
+    return resize(image, new_shape, order=order, mode='edge')
+
+
+def preprocess_image(image, spacing, is_seg=False, spacing_target=(1, 0.5, 0.5), keep_z_spacing=False):
+
+
+    if not is_seg:
+        order_img = 1
+        image = resize_image(image, spacing, spacing_target, order=order_img).astype(np.float32)
+        return image
+    else:
+        tmp = convert_to_one_hot(image)
+        vals = np.unique(image)
+        print(vals)
+        results = []
+        for i in range(len(tmp)):
+            results.append(resize_image(tmp[i].astype(float), spacing, spacing_target, 1)[None])
+        image = vals[np.vstack(results).argmax(0)]
+    return image
+
 #
 # Functions to process files, directories and metrics
 #
@@ -42,12 +73,36 @@ def load_nii(img_path):
     return nimg.get_data(), nimg.affine, nimg.header
 
 
+def save_nii(img_path, data, affine, header):
+    """
+    Function to save a 'nii' or 'nii.gz' file.
+
+    Parameters
+    ----------
+
+    img_path: string
+    Path to save the image should be ending with '.nii' or '.nii.gz'.
+
+    data: np.array
+    Numpy array of the image data.
+
+    affine: list of list or np.array
+    The affine transformation to save with the image.
+
+    header: nib.Nifti1Header
+    The header that define everything about the data
+    (pleasecheck nibabel documentation).
+    """
+    nimg = nib.Nifti1Image(data, affine=affine, header=header)
+    nimg.to_filename(img_path)
+
+
 def keep_largest_connected_components(mask):
     '''
     Keeps only the largest connected components of each label for a segmentation mask.
     '''
     out_img = np.zeros(mask.shape, dtype=np.uint8)
-    for struc_id in  [1,2,3,4,5]:
+    for struc_id in [1,2,3,4,5]:
 
         binary_img = mask == struc_id
         blobs = measure.label(binary_img, connectivity=1)
@@ -119,7 +174,7 @@ def metrics(img_gt, img_pred):
     return res
 
 
-def compute_metrics_on_files(gt, pred, dir_name=''):
+def compute_metrics_on_files(gt, pred):
     """
     Function to give the metrics for two files
 
@@ -139,7 +194,7 @@ def compute_metrics_on_files(gt, pred, dir_name=''):
     # print(formatting.format(*HEADER))
     # print(formatting.format(*res))
 
-    f = open('{}/output.txt'.format(dir_name), 'a')
+    f = open('output.txt', 'a')
     print(formatting.format(*res), file=f)  # Python 3.x
 
     return res_rtu
@@ -150,12 +205,13 @@ def crop_volume(vol, crop_size=112):
     :param vol:
     :return:
     """
+
     return np.array(vol[:,
                     int(vol.shape[1] / 2) - crop_size: int(vol.shape[1] / 2) + crop_size,
                     int(vol.shape[2] / 2) - crop_size: int(vol.shape[2] / 2) + crop_size,: ])
 
 
-def reconstuct_volume(vol, img_shape, crop_size=128):
+def reconstuct_volume(vol, img_shape, crop_size=112):
     """
     :param vol:
     :return:
@@ -169,50 +225,31 @@ def reconstuct_volume(vol, img_shape, crop_size=128):
     return recon_vol
 
 
-def load_image(self,idx ):
-    key = self.file_names.columns[self.modality[0]]
-    image = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx][key], mode='RGB'))
-    if len(self.modality)>1:
-        # key = self.file_names.columns[0]
-        for i, m in enumerate(self.modality):
-            key = self.file_names.columns[m]        # key ='img_' + m
-            image[:,:, i] = np.array(self.PIL_loader( self.root_dir , 'train/'+ self.file_names.iloc[idx][ key ], mode='L'))
-
-
-def read_img(pat_id, img_len, folder =r'./input/train/' ,type='C0'):
-    images=[]
+def read_img(pat_id, img_len, type='C0'):
+    images = []
     for im in range(img_len):
         # img = MyOpsDataset.PIL_loader(r'./input/processed/train/myops_training_{}_{}_{}.png'.format(pat_id, type, im))
-        if type  == 'C0' or type == 'DE'  or type == 'T2':
-            img = cv2.imread(folder  + r'/myops_test_{}_{}_{}.png'.format(pat_id, type, im))
-        else:
-            img =       cv2.imread(folder  + r'/myops_test_{}_C0_{}.png'.format(pat_id,  im))
-            img[:,:,1] = cv2.imread(folder  +r'/myops_test_{}_DE_{}.png'.format(pat_id,  im), cv2.IMREAD_GRAYSCALE)
-            img[:,:,2] = cv2.imread(folder  +r'/myops_test_{}_T2_{}.png'.format(pat_id,  im), cv2.IMREAD_GRAYSCALE)
-
+        img = cv2.imread(r'./input/train/myops_training_{}_{}_{}.png'.format(pat_id, type, im))
         images.append(img)
     return np.array(images)
 
 
-def evaluate_segmentation(fold=0,   device = 'cpu', model_name = 'unet', mod = 'C0' ):
+def evaluate_segmentation( device = 'cpu'):
     """
     :param Model_name: Name of the trained model
     """
-    dir_path = make_directory('results',  model_name )
-    print(dir_path)
-    unet_model.eval()
-    ids =  np.arange(101+5* fold, 101+ 5 * (fold + 1))
-    metrics = []
-    with torch.no_grad():
-        for pat_id in ids:
-            test_path = sorted(glob("input/test/myops_training_{}_{}.nii.gz".format(pat_id, 'C0')))
-            # mask_path = sorted(glob("input/raw/masks/myops_training_{}_gd.nii.gz".format(pat_id)))
-            for imgPath in test_path:
-                nimg, affine, header = load_nii(test_path)
 
-                vol_resize = read_img(pat_id, nimg.shape[2], mod)
+    with torch.no_grad():
+        for pat_id in range(106, 126):
+            test_path = sorted(glob("input/raw/train/myops_training_{}_{}.nii.gz".format(pat_id, 'C0')))
+            mask_path = sorted(glob("input/raw/masks/myops_training_{}_gd.nii.gz".format(pat_id)))
+            for imgPath, mskPath in zip(test_path, mask_path):
+                itk_image = sitk.ReadImage(test_path)
+                spacing = np.array(itk_image.GetSpacing())[[2, 1, 0]]
+                nimg, affine, header = load_nii(mskPath)
+                # print(nimg.shape)
+                vol_resize = read_img(pat_id, nimg.shape[2])
                 x_batch = np.array(vol_resize, np.float32) / 255.
-                x_batch = resize(x_batch, (nimg.shape[2], 256,256, 3), anti_aliasing=True)
                 x_batch = np.moveaxis(x_batch, -1, 1)
                 # print(x_batch.shape)
                 pred= unet_model(torch.tensor(x_batch).to(device))
@@ -231,11 +268,11 @@ def evaluate_segmentation(fold=0,   device = 'cpu', model_name = 'unet', mod = '
                 pred = np.where(pred == 3, 600, pred)
                 pred = np.where(pred == 4, 1220, pred)
                 pred = np.where(pred == 5, 2221, pred)
+                pred = preprocess_image(pred, spacing= (2.0, 1.0, 1.0), is_seg=False, spacing_target=spacing, keep_z_spacing=False)
+                compute_metrics_on_files(nimg, pred)
 
-                metrics.append(compute_metrics_on_files(nimg, pred, dir_path)[:2])
-                del pred, nimg
-    metrics = np.asarray(metrics).mean(axis=0)
-    return metrics
+                save_nii(img_path=mskPath, data=pred, affine=affine, header=header )
+
 
 if __name__ == '__main__':
 
@@ -246,7 +283,7 @@ if __name__ == '__main__':
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default=False)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=100)
     parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
-    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=2)
+    parser.add_argument("-nc", "--n_class", help="number of classes to segment", type=int, default=6)
     parser.add_argument("-nf", "--n_filter", help="number of initial filters for Unet", type=int, default=32)
     parser.add_argument("-nb", "--n_block", help="number unet blocks", type=int, default=4)
     parser.add_argument("-pt", "--pretrained", help="whether to train from scratch or resume", action="store_true",
@@ -257,26 +294,15 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config_info = "filters {}, n_block {}".format(args.n_filter, args.n_block)
     print(config_info)
-    results = np.zeros((5,10))
-    for fold in range(5):
-        unet_model = Segmentation_model(filters=args.n_filter,
-                               in_channels=3,
-                               n_block=args.n_block,
-                               bottleneck_depth=4,
-                               n_class=args.n_class
-                               )
 
-        device = 'gpu' if args.gpu else 'cpu'
-        unet_model.to(device)
-        mod = 'CO-DE-T2'
-        # model_name ='segmentation_unet_lr_0.001_32_{}_fold_{}'.format( mod, fold)
-        model_name ='localization_unet_lr_0.0001_32_augmentation_surface_loss_01_samples_-1_classes_2_CO-DE-T2_fold_{}'.format(fold)
-        mod = model_name.split('_')[-3].split('-')
-        unet_model.load_state_dict(torch.load('./weigths/{}/unet_model_checkpoint.pth.tar'.format(model_name)))
-
-        print("model loaded:  ", model_name)
-        results[fold] = evaluate_segmentation(fold, device, model_name, mod)
-
-        del unet_model
-    results = ["{:.3f}".format(r) for r in results.mean(axis=0)]
-    print(results)
+    unet_model = Ensemble_model(filters=args.n_filter,
+                           in_channels=3,
+                           n_block=args.n_block,
+                           bottleneck_depth=4,
+                           n_class=args.n_class
+                           )
+    device = 'gpu' if args.gpu else 'cpu'
+    unet_model.to(device)
+    unet_model.load_state_dict(torch.load('weights/ensemble_unet_lr_0.0001_32_CO-DE-T2_fold_0/unet_model_checkpoint.pth.tar'), strict=False)
+    print("model loaded")
+    evaluate_segmentation(device)
