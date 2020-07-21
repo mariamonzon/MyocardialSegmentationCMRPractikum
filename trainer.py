@@ -14,12 +14,12 @@ from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import argparse
 from utils.utils import one_hot_mask
-from utils.loss import DiceCoefMultilabelLoss, LossMeter, DiceLoss
-from model.dilated_unet import Segmentation_model
+from utils.loss import DiceCoefMultilabelLoss, LossMeter, DiceLoss, GeneralizedDice
+from model.unets import U_Net3D
 from model.lr_finder import LRFinder
 from utils.callbacks import EarlyStoppingCallback, ModelCheckPointCallback
 from utils.metric import dice, dice_coefficient_multiclass
-from dataset import MyOpsDataset
+from dataset import MyOpsDataset, MyOpsDataset3D
 from torch.utils.data import  DataLoader
 from pathlib import Path
 
@@ -70,7 +70,7 @@ class Trainer:
         self.loss_logs = { 'train_loss': [], 'train_dice' : [], 'val_loss': [], 'val_dice' : []}
 
         # Set the datasets
-        self.train_dataset = MyOpsDataset(self.train_path, data_dir, augmentation=  transform,
+        self.train_dataset = MyOpsDataset3D(self.train_path, data_dir, augmentation=  transform,
                                           series_id=IDs.astype(str),
                                           split= True,
                                           phase = 'train',
@@ -79,7 +79,7 @@ class Trainer:
                                           modality = modality)
         train_params = {'batch_size': batch_size, 'shuffle': True} #, 'num_workers': 4}
         self.train_dataloader = DataLoader(self.train_dataset, ** train_params)
-        self.val_dataloader = DataLoader(MyOpsDataset(self.val_path, data_dir,
+        self.val_dataloader = DataLoader(MyOpsDataset3D(self.val_path, data_dir,
                                                       split= True,
                                                       series_id= valid_id.astype(str),
                                                       phase = 'valid',
@@ -203,8 +203,8 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-lr", help="set the learning rate for the unet", type=float, default=0.0001)
-    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=300)
-    parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default=False)
+    parser.add_argument("-e", "--epochs", help="the number of epochs to train", type=int, default=200)
+    parser.add_argument("-da", "--augmentation", help="whether to apply data augmentation",default=True)
     parser.add_argument("-gpu",  help="Set the device to use the GPU", type=bool, default=True)
     parser.add_argument("--n_samples", help="number of samples to train", type=int, default=100)
     parser.add_argument("-bs", "--batch_size", help="batch size of training", type=int, default=4)
@@ -222,40 +222,35 @@ if __name__ == '__main__':
     print(config_info)
     MR = [['multi'], ['CO'], ['DE'], ['T2'], ['CO', 'DE', 'T2']]
     # torch.cuda.current_device()
-    CV = 5
+    CV = 1
     CV_dice = CV*[None]
     IDS = np.arange(101,126)
     MODALITY =  MR[args.mod]  # ['CO'] # ['CO', 'DE','T2']  MODALITY = ['CO']['DE']['T2']
     for i in range(CV):
-        valid_id = IDS[5*i:5*(i+1)]
+        valid_id = IDS[i:(i+1)]
         train_id = IDS[~np.in1d( IDS, valid_id)]
 
         # calculate the comments
-        comments = "segmentation_unet_lr_{}_{}".format( args.lr, args.n_filter)
+        comments = "unet3d_lr_{}_{}".format( args.lr, args.n_filter)
         if args.augmentation:
-            comments += "_augmentation"
+            comments += "_augmentation_GeneralizeDice_"
         comments += '_' + '-'.join(MODALITY)
-        comments += "_fold_{}".format(i)
+        # comments += "_fold_{}".format(i)
         print(comments)
 
-        model = Segmentation_model(filters=args.n_filter,
-                                        in_channels=3,
-                                        n_block=args.n_block,
-                                        bottleneck_depth=4,
-                                        n_class=args.n_class
-                                   )
+        model = U_Net3D(in_ch=3, out_ch=args.n_class, n_filters=args.n_filter )
         if args.pretrained:
             model.load_state_dict(torch.load('./weights/{}/unet_model_checkpoint.pt'.format(comments)))
 
         train_obj = Trainer(model,
-                            train_path="./input/images_masks_modalities.csv",
-                            data_dir = "./input/",
+                            train_path="./input/filenames3D.csv",
+                            data_dir = "./input/input_no_preprocess_96",
                             IDs=train_id,
                             valid_id=valid_id,
-                            width=  256,
-                            height= 256,
+                            width=  96,
+                            height= 96,
                             batch_size= args.batch_size,  # 8
-                            loss= DiceLoss(n_classes=args.n_class),
+                            loss= GeneralizedDice(n_classes=args.n_class),
                             n_classes =args.n_class,
                             augmentation=args.augmentation,
                             lr=args.lr,
